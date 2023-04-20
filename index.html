@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Document</title>
+  <i id="image-generated"></i>
+  <p>Image URL:<span id="image-url"></span></p>
+  <p>Message:<span id="message"></span></p>
+  <style>
+    body,
+    html {
+      height: 100%;
+      width: 100%;
+    }
+  </style>
+</head>
+
+<body>
+  <script type="module">
+    const s = new URLSearchParams(window.location.search);
+    const prompt = s.get('prompt');
+    const params = s.get('params');
+    const image = document.getElementById('image-generated');
+    image.onload = () => {
+      image.style.width = image.naturalWidth
+      image.style.height = image.naturalHeight
+    }
+    const url = document.getElementById('image-url');
+    const message = document.getElementById('message');
+    message.innerText = "waiting for image...";
+    try {
+      const resp = await fetch(`http://localhost:9000/image?prompt=${prompt}&params=${params}`)
+      const data = await resp.json();
+      message.innerText = "image fetched, " + data.image_url;
+      image.src = data.image_url;
+    } catch (e) {
+      message.innerText = "error to fetch image, " + e;
+      console.error(e);
+    }
+  </script>
+</body>
+
+</html>
