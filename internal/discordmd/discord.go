@@ -130,6 +130,7 @@ func (m *MidJourneyService) Start(c MidJourneyServiceConfig) {
 
 // when receive message from discord
 func (m *MidJourneyService) onDiscordMessage(s *discordgo.Session, message *discordgo.MessageCreate) {
+	log.Println("message created: ", message.ID)
 	if len(message.Embeds) > 0 {
 		for _, embed := range message.Embeds {
 			if embed.Title == "Blocked" || embed.Title == "Banned prompt" {
@@ -157,6 +158,7 @@ func (m *MidJourneyService) onDiscordMessage(s *discordgo.Session, message *disc
 	for _, attachment := range message.Attachments {
 		if message.ReferencedMessage == nil {
 			// receive origin image
+			log.Println("receive origin image: ", attachment.URL)
 			taskId, _ := getHashFromMessage(message.Content)
 			fileId, _ := getIdFromURL(attachment.URL)
 			if taskId != "" && m.taskResultChannels[taskId] != nil {
@@ -172,6 +174,7 @@ func (m *MidJourneyService) onDiscordMessage(s *discordgo.Session, message *disc
 			}
 		} else {
 			// receive upscaling image
+			log.Println("receive upscaling image: ", attachment.URL)
 			taskId := m.messageIdToTaskIdMap[message.ReferencedMessage.ID]
 			if taskId != "" {
 				if m.imageURLsMap[taskId] == nil {
