@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
 	"math/rand"
 	"net/http"
 	"regexp"
@@ -67,7 +68,8 @@ func (m *MidJourneyService) Imagine(prompt string, params string) (taskId string
 	m.rwLock.Lock()
 	defer m.rwLock.Unlock()
 
-	prompt = strings.ReplaceAll(strconv.Itoa(rand.Intn(1000))+" "+strings.Trim(strings.Trim(prompt, " ")+" "+params, " "), "  ", " ")
+	params += " --seed " + strconv.Itoa(rand.Intn(math.MaxUint32))
+	prompt = strings.ReplaceAll(strings.Trim(strings.Trim(prompt, " ")+" "+params, " "), "  ", " ")
 	taskId = getHashFromPrompt(prompt)
 
 	taskResultChannel = make(chan *ImageGenerationResult, 10)
