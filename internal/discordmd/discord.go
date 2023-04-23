@@ -130,7 +130,6 @@ func (m *MidJourneyService) Start(c MidJourneyServiceConfig) {
 
 // when receive message from discord
 func (m *MidJourneyService) onDiscordMessage(s *discordgo.Session, message *discordgo.MessageCreate) {
-	log.Println("message created: ", message.ID)
 	if len(message.Embeds) > 0 {
 		for _, embed := range message.Embeds {
 			if embed.Title == "Blocked" || embed.Title == "Banned prompt" {
