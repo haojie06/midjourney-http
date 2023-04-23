@@ -67,7 +67,7 @@ func (m *MidJourneyService) Imagine(prompt string, params string) (taskId string
 	m.rwLock.Lock()
 	defer m.rwLock.Unlock()
 
-	prompt = strconv.Itoa(rand.Intn(1000)) + " " + strings.Trim(strings.Trim(prompt, " ")+" "+params, " ")
+	prompt = strings.ReplaceAll(strconv.Itoa(rand.Intn(1000))+" "+strings.Trim(strings.Trim(prompt, " ")+" "+params, " "), "  ", " ")
 	taskId = getHashFromPrompt(prompt)
 
 	taskResultChannel = make(chan *ImageGenerationResult, 10)
@@ -160,8 +160,8 @@ func (m *MidJourneyService) onDiscordMessage(s *discordgo.Session, message *disc
 			log.Println("receive origin image: ", attachment.URL)
 			taskId, _ := getHashFromMessage(message.Content)
 			fileId, _ := getIdFromURL(attachment.URL)
-			log.Printf("upscale task %s, fileId: %s\n", taskId, fileId)
 			if taskId != "" && m.taskResultChannels[taskId] != nil {
+				log.Printf("upscale task %s, fileId: %s\n", taskId, fileId)
 				m.messageIdToTaskIdMap[message.ID] = taskId
 				m.originImageURLMap[taskId] = attachment.URL
 				if code := m.upscaleRequest(fileId, 1, message.ID); code >= 400 {
