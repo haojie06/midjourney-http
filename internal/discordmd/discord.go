@@ -131,7 +131,7 @@ func (m *MidJourneyService) Start(c MidJourneyServiceConfig) {
 func (m *MidJourneyService) onDiscordMessage(s *discordgo.Session, message *discordgo.MessageCreate) {
 	if len(message.Embeds) > 0 {
 		for _, embed := range message.Embeds {
-			if embed.Title != "" {
+			if embed.Title == "Blocked" || embed.Title == "Banned prompt" {
 				taskId := getHashFromEmbeds(embed.Footer.Text)
 				log.Printf("%s prompt occoured in task: %s\n", embed.Title, taskId)
 				log.Printf("desc: %s\n", embed.Description)
