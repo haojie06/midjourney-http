@@ -10,6 +10,7 @@ import (
 	"math/rand"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -66,15 +67,7 @@ func (m *MidJourneyService) Imagine(prompt string, params string) (taskId string
 	m.rwLock.Lock()
 	defer m.rwLock.Unlock()
 
-	promptParts := strings.Split(strings.Trim(strings.Trim(prompt, " ")+" "+params, " "), " ")
-	prompt = ""
-	for _, part := range promptParts {
-		// random padding
-		prompt += part
-		for i := 0; i < rand.Intn(3)+1; i++ {
-			prompt += " "
-		}
-	}
+	prompt = strconv.Itoa(rand.Intn(1000)) + strings.Trim(strings.Trim(prompt, " ")+" "+params, " ")
 	taskId = getHashFromPrompt(prompt)
 
 	taskResultChannel = make(chan *ImageGenerationResult, 10)
