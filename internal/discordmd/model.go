@@ -67,13 +67,15 @@ type imageGenerationTask struct {
 	taskId string
 
 	prompt string
-
-	params string
 }
 
 type ImageGenerationResult struct {
 	// 任务ID
 	TaskId string `json:"task_id"`
+
+	Successful bool `json:"successful"`
+
+	Message string `json:"message"`
 
 	OriginImageURL string `json:"origin_image_url"`
 

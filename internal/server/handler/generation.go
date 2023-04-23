@@ -33,12 +33,8 @@ func CreateGenerationTask(c *gin.Context) {
 		return
 	}
 	taskResult := <-taskResultChan
-	c.JSON(200, model.GenerationTaskResponse{
-		TaskId:         taskId,
-		Status:         "completed",
-		ImageURLs:      taskResult.ImageURLs,
-		OriginImageURL: taskResult.OriginImageURL,
-	})
+	log.Printf("task %s completed\n", taskResult.TaskId)
+	// TODO implement webhook
 }
 
 func GenerationImageFromGetRequest(c *gin.Context) {
@@ -55,10 +51,21 @@ func GenerationImageFromGetRequest(c *gin.Context) {
 	}
 	log.Printf("task %s created\n", taskId)
 	taskResult := <-taskResultChan
-	c.JSON(200, model.GenerationTaskResponse{
-		TaskId:         taskId,
-		Status:         "completed",
-		ImageURLs:      taskResult.ImageURLs,
-		OriginImageURL: taskResult.OriginImageURL,
-	})
+	if taskResult.Successful {
+		c.JSON(200, model.GenerationTaskResponse{
+			TaskId:         taskId,
+			Status:         "completed",
+			Message:        taskResult.Message,
+			ImageURLs:      taskResult.ImageURLs,
+			OriginImageURL: taskResult.OriginImageURL,
+		})
+	} else {
+		c.JSON(400, model.GenerationTaskResponse{
+			TaskId:         taskId,
+			Status:         "failed",
+			Message:        taskResult.Message,
+			ImageURLs:      taskResult.ImageURLs,
+			OriginImageURL: taskResult.OriginImageURL,
+		})
+	}
 }

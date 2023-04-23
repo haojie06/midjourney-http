@@ -2,10 +2,14 @@ package discordmd
 
 import (
 	"bytes"
+	"crypto/md5"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
+	"math/rand"
 	"net/http"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -29,6 +33,8 @@ func init() {
 
 		imageURLsMap: make(map[string][]string),
 
+		messageIdToTaskIdMap: make(map[string]string),
+
 		commands: make(map[string]*discordgo.ApplicationCommand),
 
 		rwLock: sync.RWMutex{},
@@ -48,6 +54,8 @@ type MidJourneyService struct {
 
 	imageURLsMap map[string][]string
 
+	messageIdToTaskIdMap map[string]string
+
 	commands map[string]*discordgo.ApplicationCommand
 
 	rwLock sync.RWMutex
@@ -58,7 +66,9 @@ func (m *MidJourneyService) Imagine(prompt string, params string) (taskId string
 	m.rwLock.Lock()
 	defer m.rwLock.Unlock()
 
-	taskId = uuid.New().String()
+	prompt = strings.Trim(strings.Trim(prompt, " ")+" "+params, " ")
+	taskId = getHashFromPrompt(prompt)
+
 	taskResultChannel = make(chan *ImageGenerationResult, 10)
 	m.taskResultChannels[taskId] = taskResultChannel
 	if len(m.taskChan) == cap(m.taskChan) {
@@ -68,7 +78,6 @@ func (m *MidJourneyService) Imagine(prompt string, params string) (taskId string
 	m.taskChan <- &imageGenerationTask{
 		taskId: taskId,
 		prompt: prompt,
-		params: params,
 	}
 	return
 }
@@ -99,14 +108,17 @@ func (m *MidJourneyService) Start(c MidJourneyServiceConfig) {
 		task := <-m.taskChan
 		// to avoid discord 429
 		time.Sleep(3 * time.Second)
-		statusCode := m.imagineRequest(task.taskId, task.prompt, task.params)
+
+		statusCode := m.imagineRequest(task.taskId, task.prompt)
 		if statusCode >= 400 {
 			log.Printf("imagine task %s failed, status code: %d\n", task.taskId, statusCode)
 			m.rwLock.Lock()
 			if c, exist := m.taskResultChannels[task.taskId]; exist {
 				c <- &ImageGenerationResult{
-					TaskId:    task.taskId,
-					ImageURLs: []string{},
+					TaskId:     task.taskId,
+					Successful: false,
+					Message:    fmt.Sprintf("imagine task failed, code: %d", statusCode),
+					ImageURLs:  []string{},
 				}
 				delete(m.taskResultChannels, task.taskId)
 			}
@@ -119,16 +131,18 @@ func (m *MidJourneyService) Start(c MidJourneyServiceConfig) {
 func (m *MidJourneyService) onDiscordMessage(s *discordgo.Session, message *discordgo.MessageCreate) {
 	if len(message.Embeds) > 0 {
 		for _, embed := range message.Embeds {
-			if embed.Title == "Banned prompt" {
-				taskId := getTaskIdFromBannedPrompt(embed.Footer.Text)
-				log.Printf("banned prompt occoured in task: %s\n", taskId)
+			if embed.Title != "" {
+				taskId := getHashFromEmbeds(embed.Footer.Text)
+				log.Printf("%s prompt occoured in task: %s\n", embed.Title, taskId)
 				log.Printf("desc: %s\n", embed.Description)
 				m.rwLock.Lock()
 				defer m.rwLock.Unlock()
 				if c, exist := m.taskResultChannels[taskId]; exist {
 					c <- &ImageGenerationResult{
-						TaskId:    taskId,
-						ImageURLs: []string{},
+						TaskId:     taskId,
+						Successful: false,
+						Message:    embed.Title + " " + embed.Description,
+						ImageURLs:  []string{},
 					}
 					delete(m.taskResultChannels, taskId)
 				}
@@ -137,27 +151,28 @@ func (m *MidJourneyService) onDiscordMessage(s *discordgo.Session, message *disc
 		}
 	}
 
+	m.rwLock.Lock()
+	defer m.rwLock.Unlock()
 	for _, attachment := range message.Attachments {
 		if message.ReferencedMessage == nil {
-			fileId, taskId := getIdFromURL(attachment.URL)
-			if taskId != "" {
-				m.rwLock.Lock()
-				defer m.rwLock.Unlock()
+			// receive origin image
+			taskId, _ := getHashFromMessage(message.Content)
+			fileId, _ := getIdFromURL(attachment.URL)
+			if taskId != "" && m.taskResultChannels[taskId] != nil {
+				m.messageIdToTaskIdMap[message.ID] = taskId
 				m.originImageURLMap[taskId] = attachment.URL
 				m.upscaleRequest(fileId, 1, message.ID)
-				time.Sleep(1 * time.Second)
+				time.Sleep(time.Duration(rand.Intn(2000)))
 				m.upscaleRequest(fileId, 2, message.ID)
-				time.Sleep(1 * time.Second)
+				time.Sleep(time.Duration(rand.Intn(2000)))
 				m.upscaleRequest(fileId, 3, message.ID)
-				time.Sleep(1 * time.Second)
+				time.Sleep(time.Duration(rand.Intn(2000)))
 				m.upscaleRequest(fileId, 4, message.ID)
 			}
 		} else {
 			// receive upscaling image
-			_, taskId := getIdFromURL(attachment.URL)
+			taskId := m.messageIdToTaskIdMap[message.ReferencedMessage.ID]
 			if taskId != "" {
-				m.rwLock.Lock()
-				defer m.rwLock.Unlock()
 				if m.imageURLsMap[taskId] == nil {
 					log.Println("init imageURLsMap")
 					m.imageURLsMap[taskId] = make([]string, 0)
@@ -168,6 +183,7 @@ func (m *MidJourneyService) onDiscordMessage(s *discordgo.Session, message *disc
 					if c, exist := m.taskResultChannels[taskId]; exist {
 						c <- &ImageGenerationResult{
 							TaskId:         taskId,
+							Successful:     true,
 							ImageURLs:      m.imageURLsMap[taskId],
 							OriginImageURL: m.originImageURLMap[taskId],
 						}
@@ -175,6 +191,7 @@ func (m *MidJourneyService) onDiscordMessage(s *discordgo.Session, message *disc
 					delete(m.taskResultChannels, taskId)
 					delete(m.imageURLsMap, taskId)
 					delete(m.originImageURLMap, taskId)
+					delete(m.messageIdToTaskIdMap, message.ReferencedMessage.ID)
 				} else {
 					log.Printf("%s image generation not finished, current count: %d\n", taskId, len(m.imageURLsMap[taskId]))
 				}
@@ -183,13 +200,12 @@ func (m *MidJourneyService) onDiscordMessage(s *discordgo.Session, message *disc
 	}
 }
 
-func (m *MidJourneyService) imagineRequest(taskId string, prompt string, params string) int {
+func (m *MidJourneyService) imagineRequest(taskId string, prompt string) int {
 	imagineCommand, exists := m.commands["imagine"]
 	if !exists {
 		log.Println("Imagine command not found")
 		return 500
 	}
-	prompt = taskId + " " + strings.Trim(prompt, " ") + " " + params
 	var dataOptions []*discordgo.ApplicationCommandInteractionDataOption
 	dataOptions = append(dataOptions, &discordgo.ApplicationCommandInteractionDataOption{
 		Type:  3,
@@ -279,15 +295,46 @@ func getIdFromURL(url string) (fileId, taskId string) {
 	return
 }
 
-func getTaskIdFromBannedPrompt(text string) string {
-	tempStrs := strings.Split(text, " ")
-	if len(tempStrs) < 2 {
-		return ""
-	}
-	return tempStrs[1]
-}
-
 func isUUIDString(id string) bool {
 	_, err := uuid.Parse(id)
 	return err == nil
+}
+
+func getHashFromMessage(message string) (hashStr, promptStr string) {
+	re := regexp.MustCompile(`\*{2}(.+?)\*{2}`)
+	matches := re.FindStringSubmatch(message)
+	if len(matches) > 1 {
+		promptStr = strings.Trim(matches[1], " ")
+		h := md5.Sum([]byte(matches[1]))
+		hashStr = hex.EncodeToString(h[:])
+		if len(hashStr) > 32 {
+			hashStr = hashStr[:32]
+		}
+		return
+	}
+	return "", ""
+}
+
+func getHashFromPrompt(prompt string) (hashStr string) {
+	h := md5.Sum([]byte(prompt))
+	hashStr = hex.EncodeToString(h[:])
+	if len(hashStr) > 32 {
+		hashStr = hashStr[:32]
+	}
+	return
+}
+
+func getHashFromEmbeds(message string) (hashStr string) {
+	message = strings.Trim(message, " ")
+	messageParts := strings.SplitN(message, " ", 2)
+	if len(messageParts) < 2 {
+		return ""
+	}
+	log.Println(messageParts[1])
+	h := md5.Sum([]byte(messageParts[1]))
+	hashStr = hex.EncodeToString(h[:])
+	if len(hashStr) > 32 {
+		hashStr = hashStr[:32]
+	}
+	return
 }
