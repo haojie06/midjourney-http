@@ -25,6 +25,10 @@ func init() {
 
 		taskResultChannels: make(map[string]chan *ImageGenerationResult),
 
+		originImageURLMap: make(map[string]string),
+
+		imageURLsMap: make(map[string][]string),
+
 		commands: make(map[string]*discordgo.ApplicationCommand),
 
 		rwLock: sync.RWMutex{},
@@ -39,6 +43,10 @@ type MidJourneyService struct {
 	taskChan chan *imageGenerationTask
 
 	taskResultChannels map[string]chan *ImageGenerationResult
+
+	originImageURLMap map[string]string
+
+	imageURLsMap map[string][]string
 
 	commands map[string]*discordgo.ApplicationCommand
 
@@ -89,7 +97,7 @@ func (m *MidJourneyService) Start(c MidJourneyServiceConfig) {
 	// reveive task and imagine
 	for {
 		task := <-m.taskChan
-		// avoid discord 429
+		// to avoid discord 429
 		time.Sleep(3 * time.Second)
 		statusCode := m.imagineRequest(task.taskId, task.prompt, task.params)
 		if statusCode >= 400 {
@@ -97,8 +105,8 @@ func (m *MidJourneyService) Start(c MidJourneyServiceConfig) {
 			m.rwLock.Lock()
 			if c, exist := m.taskResultChannels[task.taskId]; exist {
 				c <- &ImageGenerationResult{
-					TaskId:   task.taskId,
-					ImageURL: "",
+					TaskId:    task.taskId,
+					ImageURLs: []string{},
 				}
 				delete(m.taskResultChannels, task.taskId)
 			}
@@ -119,8 +127,8 @@ func (m *MidJourneyService) onDiscordMessage(s *discordgo.Session, message *disc
 				defer m.rwLock.Unlock()
 				if c, exist := m.taskResultChannels[taskId]; exist {
 					c <- &ImageGenerationResult{
-						TaskId:   taskId,
-						ImageURL: "",
+						TaskId:    taskId,
+						ImageURLs: []string{},
 					}
 					delete(m.taskResultChannels, taskId)
 				}
@@ -133,7 +141,16 @@ func (m *MidJourneyService) onDiscordMessage(s *discordgo.Session, message *disc
 		if message.ReferencedMessage == nil {
 			fileId, taskId := getIdFromURL(attachment.URL)
 			if taskId != "" {
+				m.rwLock.Lock()
+				defer m.rwLock.Unlock()
+				m.originImageURLMap[taskId] = attachment.URL
 				m.upscaleRequest(fileId, 1, message.ID)
+				time.Sleep(1 * time.Second)
+				m.upscaleRequest(fileId, 2, message.ID)
+				time.Sleep(1 * time.Second)
+				m.upscaleRequest(fileId, 3, message.ID)
+				time.Sleep(1 * time.Second)
+				m.upscaleRequest(fileId, 4, message.ID)
 			}
 		} else {
 			// receive upscaling image
@@ -141,12 +158,25 @@ func (m *MidJourneyService) onDiscordMessage(s *discordgo.Session, message *disc
 			if taskId != "" {
 				m.rwLock.Lock()
 				defer m.rwLock.Unlock()
-				if c, exist := m.taskResultChannels[taskId]; exist {
-					c <- &ImageGenerationResult{
-						TaskId:   taskId,
-						ImageURL: attachment.URL,
+				if m.imageURLsMap[taskId] == nil {
+					log.Println("init imageURLsMap")
+					m.imageURLsMap[taskId] = make([]string, 0)
+				}
+				m.imageURLsMap[taskId] = append(m.imageURLsMap[taskId], attachment.URL)
+				if len(m.imageURLsMap[taskId]) == 4 {
+					log.Println("image generation finished")
+					if c, exist := m.taskResultChannels[taskId]; exist {
+						c <- &ImageGenerationResult{
+							TaskId:         taskId,
+							ImageURLs:      m.imageURLsMap[taskId],
+							OriginImageURL: m.originImageURLMap[taskId],
+						}
 					}
 					delete(m.taskResultChannels, taskId)
+					delete(m.imageURLsMap, taskId)
+					delete(m.originImageURLMap, taskId)
+				} else {
+					log.Printf("%s image generation not finished, current count: %d\n", taskId, len(m.imageURLsMap[taskId]))
 				}
 			}
 		}

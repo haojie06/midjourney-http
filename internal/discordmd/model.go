@@ -75,5 +75,7 @@ type ImageGenerationResult struct {
 	// 任务ID
 	TaskId string `json:"task_id"`
 
-	ImageURL string `json:"image_url"`
+	OriginImageURL string `json:"origin_image_url"`
+
+	ImageURLs []string `json:"image_urls"`
 }

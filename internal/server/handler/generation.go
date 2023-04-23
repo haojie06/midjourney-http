@@ -34,9 +34,10 @@ func CreateGenerationTask(c *gin.Context) {
 	}
 	taskResult := <-taskResultChan
 	c.JSON(200, model.GenerationTaskResponse{
-		TaskId:   taskId,
-		Status:   "completed",
-		ImageURL: taskResult.ImageURL,
+		TaskId:         taskId,
+		Status:         "completed",
+		ImageURLs:      taskResult.ImageURLs,
+		OriginImageURL: taskResult.OriginImageURL,
 	})
 }
 
@@ -55,8 +56,9 @@ func GenerationImageFromGetRequest(c *gin.Context) {
 	log.Printf("task %s created\n", taskId)
 	taskResult := <-taskResultChan
 	c.JSON(200, model.GenerationTaskResponse{
-		TaskId:   taskId,
-		Status:   "completed",
-		ImageURL: taskResult.ImageURL,
+		TaskId:         taskId,
+		Status:         "completed",
+		ImageURLs:      taskResult.ImageURLs,
+		OriginImageURL: taskResult.OriginImageURL,
 	})
 }
