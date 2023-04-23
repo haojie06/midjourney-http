@@ -160,6 +160,7 @@ func (m *MidJourneyService) onDiscordMessage(s *discordgo.Session, message *disc
 			log.Println("receive origin image: ", attachment.URL)
 			taskId, _ := getHashFromMessage(message.Content)
 			fileId, _ := getIdFromURL(attachment.URL)
+			log.Printf("upscale task %s, fileId: %s\n", taskId, fileId)
 			if taskId != "" && m.taskResultChannels[taskId] != nil {
 				m.messageIdToTaskIdMap[message.ID] = taskId
 				m.originImageURLMap[taskId] = attachment.URL
