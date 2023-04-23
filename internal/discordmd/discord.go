@@ -69,7 +69,7 @@ func (m *MidJourneyService) Imagine(prompt string, params string) (taskId string
 	defer m.rwLock.Unlock()
 
 	params += " --seed " + strconv.Itoa(rand.Intn(math.MaxUint32))
-	prompt = strings.ReplaceAll(strings.Trim(strings.Trim(prompt, " ")+" "+params, " "), "  ", " ")
+	prompt = strings.Join(strings.Fields(strings.Trim(strings.Trim(prompt, " ")+" "+params, " ")), " ")
 	taskId = getHashFromPrompt(prompt)
 
 	taskResultChannel = make(chan *ImageGenerationResult, 10)
