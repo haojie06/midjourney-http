@@ -10,7 +10,6 @@ import (
 	"math/rand"
 	"net/http"
 	"regexp"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -67,7 +66,15 @@ func (m *MidJourneyService) Imagine(prompt string, params string) (taskId string
 	m.rwLock.Lock()
 	defer m.rwLock.Unlock()
 
-	prompt = strconv.Itoa(rand.Intn(1000)) + strings.Trim(strings.Trim(prompt, " ")+" "+params, " ")
+	promptParts := strings.Split(strings.Trim(strings.Trim(prompt, " ")+" "+params, " "), " ")
+	prompt = ""
+	for _, part := range promptParts {
+		// random padding
+		prompt += part
+		for i := 0; i < rand.Intn(3); i++ {
+			prompt += " "
+		}
+	}
 	taskId = getHashFromPrompt(prompt)
 
 	taskResultChannel = make(chan *ImageGenerationResult, 10)
@@ -163,13 +170,21 @@ func (m *MidJourneyService) onDiscordMessage(s *discordgo.Session, message *disc
 			if taskId != "" && m.taskResultChannels[taskId] != nil {
 				m.messageIdToTaskIdMap[message.ID] = taskId
 				m.originImageURLMap[taskId] = attachment.URL
-				m.upscaleRequest(fileId, 1, message.ID)
-				time.Sleep(time.Duration(rand.Intn(2)) * time.Second)
-				m.upscaleRequest(fileId, 2, message.ID)
-				time.Sleep(time.Duration(rand.Intn(2)) * time.Second)
-				m.upscaleRequest(fileId, 3, message.ID)
-				time.Sleep(time.Duration(rand.Intn(2)) * time.Second)
-				m.upscaleRequest(fileId, 4, message.ID)
+				if code := m.upscaleRequest(fileId, 1, message.ID); code >= 400 {
+					log.Println("upscale failed, code: ", code)
+				}
+				time.Sleep(time.Duration((rand.Intn(2000))+1000) * time.Millisecond)
+				if code := m.upscaleRequest(fileId, 2, message.ID); code >= 400 {
+					log.Println("upscale failed, code: ", code)
+				}
+				time.Sleep(time.Duration((rand.Intn(2000))+1000) * time.Millisecond)
+				if code := m.upscaleRequest(fileId, 3, message.ID); code >= 400 {
+					log.Println("upscale failed, code: ", code)
+				}
+				time.Sleep(time.Duration((rand.Intn(2000))+1000) * time.Millisecond)
+				if code := m.upscaleRequest(fileId, 4, message.ID); code >= 400 {
+					log.Println("upscale failed, code: ", code)
+				}
 			}
 		} else {
 			// receive upscaling image
@@ -233,7 +248,7 @@ func (m *MidJourneyService) imagineRequest(taskId string, prompt string) int {
 	return m.sendRequest(payload)
 }
 
-func (m *MidJourneyService) upscaleRequest(id string, index int, messageId string) {
+func (m *MidJourneyService) upscaleRequest(id string, index int, messageId string) int {
 	payload := InteractionRequestTypeThree{
 		Type:          3,
 		MessageFlags:  0,
@@ -246,7 +261,7 @@ func (m *MidJourneyService) upscaleRequest(id string, index int, messageId strin
 			CustomID:      fmt.Sprintf("MJ::JOB::upsample::%d::%s", index, id),
 		},
 	}
-	m.sendRequest(payload)
+	return m.sendRequest(payload)
 }
 
 func (m *MidJourneyService) sendRequest(payload interface{}) int {
