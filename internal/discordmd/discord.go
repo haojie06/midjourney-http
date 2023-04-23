@@ -71,7 +71,7 @@ func (m *MidJourneyService) Imagine(prompt string, params string) (taskId string
 	for _, part := range promptParts {
 		// random padding
 		prompt += part
-		for i := 0; i < rand.Intn(3); i++ {
+		for i := 0; i < rand.Intn(3)+1; i++ {
 			prompt += " "
 		}
 	}
