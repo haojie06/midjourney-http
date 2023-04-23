@@ -67,7 +67,7 @@ func (m *MidJourneyService) Imagine(prompt string, params string) (taskId string
 	m.rwLock.Lock()
 	defer m.rwLock.Unlock()
 
-	prompt = strconv.Itoa(rand.Intn(1000)) + strings.Trim(strings.Trim(prompt, " ")+" "+params, " ")
+	prompt = strconv.Itoa(rand.Intn(1000)) + " " + strings.Trim(strings.Trim(prompt, " ")+" "+params, " ")
 	taskId = getHashFromPrompt(prompt)
 
 	taskResultChannel = make(chan *ImageGenerationResult, 10)
