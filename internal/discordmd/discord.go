@@ -163,8 +163,11 @@ func (m *MidJourneyService) onDiscordMessage(s *discordgo.Session, message *disc
 				m.messageIdToTaskIdMap[message.ID] = taskId
 				m.originImageURLMap[taskId] = attachment.URL
 				m.upscaleRequest(fileId, 1, message.ID)
+				time.Sleep(time.Duration(rand.Intn(2)) * time.Second)
 				m.upscaleRequest(fileId, 2, message.ID)
+				time.Sleep(time.Duration(rand.Intn(2)) * time.Second)
 				m.upscaleRequest(fileId, 3, message.ID)
+				time.Sleep(time.Duration(rand.Intn(2)) * time.Second)
 				m.upscaleRequest(fileId, 4, message.ID)
 			}
 		} else {
