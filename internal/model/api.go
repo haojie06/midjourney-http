@@ -19,6 +19,8 @@ type GenerationTaskResponse struct {
 
 	Status string `json:"status"` // pending, running, completed, failed
 
+	Message string `json:"message"`
+
 	ImageURLs []string `json:"image_urls"`
 
 	OriginImageURL string `json:"origin_image_url"`

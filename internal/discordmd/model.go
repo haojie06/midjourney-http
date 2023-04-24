@@ -10,6 +10,8 @@ type MidJourneyServiceConfig struct {
 	DiscordChannelId string `mapstructure:"discordChannelId"` // midjourney channel id
 
 	DiscordSessionId string `mapstructure:"discordSessionId"` // midjourney session id
+
+	UpscaleCount int `mapstructure:"upscaleCount"`
 }
 
 type InteractionRequestWrapper struct {
@@ -67,13 +69,15 @@ type imageGenerationTask struct {
 	taskId string
 
 	prompt string
-
-	params string
 }
 
 type ImageGenerationResult struct {
 	// 任务ID
 	TaskId string `json:"task_id"`
+
+	Successful bool `json:"successful"`
+
+	Message string `json:"message"`
 
 	OriginImageURL string `json:"origin_image_url"`
 
