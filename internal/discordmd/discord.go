@@ -159,7 +159,7 @@ func (m *MidJourneyService) onDiscordMessage(s *discordgo.Session, message *disc
 		if message.ReferencedMessage == nil {
 			// receive origin image
 			log.Println("receive origin image: ", attachment.URL)
-			taskId, _ := getHashFromMessage(message.Content)
+			taskId, promptStr := getHashFromMessage(message.Content)
 			fileId := getIdFromURL(attachment.URL)
 			if taskId != "" && m.taskResultChannels[taskId] != nil {
 				m.messageIdToTaskIdMap[message.ID] = taskId
@@ -172,16 +172,19 @@ func (m *MidJourneyService) onDiscordMessage(s *discordgo.Session, message *disc
 					}
 					time.Sleep(time.Duration((rand.Intn(2000))+1000) * time.Millisecond)
 				}
+			} else {
+				log.Println("no task id found for message: ", message.Content, promptStr)
 			}
 		} else {
 			// receive upscaling image
-			log.Println("receive upscaled image: ", attachment.URL)
 			taskId := m.messageIdToTaskIdMap[message.ReferencedMessage.ID]
+			log.Println("receive upscaled image:", attachment.URL, "tasiId:", taskId)
 			if taskId == "" {
 				log.Println("no task id found for message: ", message.ReferencedMessage.ID)
 				return
 			}
 			if m.imageURLsMap[taskId] == nil {
+				log.Println("create image url map for task: ", taskId)
 				m.imageURLsMap[taskId] = make([]string, 0)
 			}
 			m.imageURLsMap[taskId] = append(m.imageURLsMap[taskId], attachment.URL)
