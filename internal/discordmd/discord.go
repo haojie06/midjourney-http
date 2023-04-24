@@ -99,7 +99,7 @@ func (m *MidJourneyService) Start(c MidJourneyServiceConfig) {
 	for _, command := range commands {
 		m.commands[command.Name] = command
 	}
-
+	fmt.Printf("------------ upsc %d\n", m.config.UpscaleCount)
 	m.discordSession.AddHandler(m.onDiscordMessage)
 	m.discordSession.Identify.Intents = discordgo.IntentsAll
 	err = m.discordSession.Open()
