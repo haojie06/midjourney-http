@@ -10,6 +10,8 @@ type MidJourneyServiceConfig struct {
 	DiscordChannelId string `mapstructure:"discordChannelId"` // midjourney channel id
 
 	DiscordSessionId string `mapstructure:"discordSessionId"` // midjourney session id
+
+	UpscaleCount int `mapstructure:"upscaleCount"`
 }
 
 type InteractionRequestWrapper struct {

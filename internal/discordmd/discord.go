@@ -161,54 +161,45 @@ func (m *MidJourneyService) onDiscordMessage(s *discordgo.Session, message *disc
 			// receive origin image
 			log.Println("receive origin image: ", attachment.URL)
 			taskId, _ := getHashFromMessage(message.Content)
-			fileId, _ := getIdFromURL(attachment.URL)
+			fileId := getIdFromURL(attachment.URL)
 			if taskId != "" && m.taskResultChannels[taskId] != nil {
-				log.Printf("upscale task %s, fileId: %s\n", taskId, fileId)
 				m.messageIdToTaskIdMap[message.ID] = taskId
 				m.originImageURLMap[taskId] = attachment.URL
-				if code := m.upscaleRequest(fileId, 1, message.ID); code >= 400 {
-					log.Println("upscale failed, code: ", code)
-				}
-				time.Sleep(time.Duration((rand.Intn(2000))+1000) * time.Millisecond)
-				if code := m.upscaleRequest(fileId, 2, message.ID); code >= 400 {
-					log.Println("upscale failed, code: ", code)
-				}
-				time.Sleep(time.Duration((rand.Intn(2000))+1000) * time.Millisecond)
-				if code := m.upscaleRequest(fileId, 3, message.ID); code >= 400 {
-					log.Println("upscale failed, code: ", code)
-				}
-				time.Sleep(time.Duration((rand.Intn(2000))+1000) * time.Millisecond)
-				if code := m.upscaleRequest(fileId, 4, message.ID); code >= 400 {
-					log.Println("upscale failed, code: ", code)
+				for i := 1; i <= m.config.UpscaleCount; i++ {
+					if code := m.upscaleRequest(fileId, i, message.ID); code >= 400 {
+						log.Println("failed to upscale image, code: ", code)
+					}
+					time.Sleep(time.Duration((rand.Intn(2000))+1000) * time.Millisecond)
 				}
 			}
 		} else {
 			// receive upscaling image
-			log.Println("receive upscaling image: ", attachment.URL)
+			log.Println("receive upscaled image: ", attachment.URL)
 			taskId := m.messageIdToTaskIdMap[message.ReferencedMessage.ID]
-			if taskId != "" {
-				if m.imageURLsMap[taskId] == nil {
-					log.Println("init imageURLsMap")
-					m.imageURLsMap[taskId] = make([]string, 0)
-				}
-				m.imageURLsMap[taskId] = append(m.imageURLsMap[taskId], attachment.URL)
-				if len(m.imageURLsMap[taskId]) == 4 {
-					log.Println("image generation finished")
-					if c, exist := m.taskResultChannels[taskId]; exist {
-						c <- &ImageGenerationResult{
-							TaskId:         taskId,
-							Successful:     true,
-							ImageURLs:      m.imageURLsMap[taskId],
-							OriginImageURL: m.originImageURLMap[taskId],
-						}
+			if taskId == "" {
+				log.Println("no task id found for message: ", message.ReferencedMessage.ID)
+				return
+			}
+			if m.imageURLsMap[taskId] == nil {
+				m.imageURLsMap[taskId] = make([]string, 0)
+			}
+			m.imageURLsMap[taskId] = append(m.imageURLsMap[taskId], attachment.URL)
+			if len(m.imageURLsMap[taskId]) == m.config.UpscaleCount {
+				log.Println("image generation finished")
+				if c, exist := m.taskResultChannels[taskId]; exist {
+					c <- &ImageGenerationResult{
+						TaskId:         taskId,
+						Successful:     true,
+						ImageURLs:      m.imageURLsMap[taskId],
+						OriginImageURL: m.originImageURLMap[taskId],
 					}
-					delete(m.taskResultChannels, taskId)
-					delete(m.imageURLsMap, taskId)
-					delete(m.originImageURLMap, taskId)
-					delete(m.messageIdToTaskIdMap, message.ReferencedMessage.ID)
-				} else {
-					log.Printf("%s image generation not finished, current count: %d\n", taskId, len(m.imageURLsMap[taskId]))
 				}
+				delete(m.taskResultChannels, taskId)
+				delete(m.imageURLsMap, taskId)
+				delete(m.originImageURLMap, taskId)
+				delete(m.messageIdToTaskIdMap, message.ReferencedMessage.ID)
+			} else {
+				log.Printf("%s image generation not finished, current count: %d\n", taskId, len(m.imageURLsMap[taskId]))
 			}
 		}
 	}
@@ -285,22 +276,17 @@ func (m *MidJourneyService) sendRequest(payload interface{}) int {
 	return resposne.StatusCode
 }
 
-func getIdFromURL(url string) (fileId, taskId string) {
+func getIdFromURL(url string) (fileId string) {
 	tempStrs := strings.Split(url, ".")
 	if len(tempStrs) < 2 {
-		return "", ""
+		return ""
 	}
 	tempStr := tempStrs[len(tempStrs)-2]
 	tempStrs = strings.Split(tempStr, "_")
 	if len(tempStrs) < 2 {
-		return "", ""
+		return ""
 	}
 
-	if isUUIDString(tempStrs[1]) {
-		taskId = tempStrs[1]
-	} else {
-		taskId = ""
-	}
 	if isUUIDString(tempStrs[len(tempStrs)-1]) {
 		fileId = tempStrs[len(tempStrs)-1]
 	} else {
