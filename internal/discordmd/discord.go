@@ -99,7 +99,6 @@ func (m *MidJourneyService) Start(c MidJourneyServiceConfig) {
 	for _, command := range commands {
 		m.commands[command.Name] = command
 	}
-	fmt.Printf("------------ upsc %d\n", m.config.UpscaleCount)
 	m.discordSession.AddHandler(m.onDiscordMessage)
 	m.discordSession.Identify.Intents = discordgo.IntentsAll
 	err = m.discordSession.Open()
@@ -169,7 +168,7 @@ func (m *MidJourneyService) onDiscordMessage(s *discordgo.Session, message *disc
 					if code := m.upscaleRequest(fileId, i, message.ID); code >= 400 {
 						log.Println("failed to upscale image, code: ", code)
 					} else {
-						log.Printf("upscale image %s - %d\n", fileId, i)
+						log.Printf("upscale image %s %d\n", fileId, i)
 					}
 					time.Sleep(time.Duration((rand.Intn(2000))+1000) * time.Millisecond)
 				}
