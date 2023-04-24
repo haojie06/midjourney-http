@@ -71,6 +71,7 @@ func (m *MidJourneyService) Imagine(prompt string, params string) (taskId string
 	params += " --seed " + strconv.Itoa(rand.Intn(math.MaxUint32))
 	prompt = strings.Join(strings.Fields(strings.Trim(strings.Trim(prompt, " ")+" "+params, " ")), " ")
 	taskId = getHashFromPrompt(prompt)
+	log.Println("prompt:", prompt, "taskId:", taskId)
 
 	taskResultChannel = make(chan *ImageGenerationResult, 10)
 	m.taskResultChannels[taskId] = taskResultChannel
@@ -173,7 +174,7 @@ func (m *MidJourneyService) onDiscordMessage(s *discordgo.Session, message *disc
 					time.Sleep(time.Duration((rand.Intn(2000))+1000) * time.Millisecond)
 				}
 			} else {
-				log.Println("no task id found for message: ", message.Content, promptStr)
+				log.Println("no task id found for message: ", message.Content)
 			}
 		} else {
 			// receive upscaling image
