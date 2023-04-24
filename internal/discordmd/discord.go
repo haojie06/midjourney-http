@@ -70,10 +70,10 @@ func (m *MidJourneyService) Imagine(prompt string, params string) (taskId string
 
 	params += " --seed " + strconv.Itoa(rand.Intn(math.MaxUint32))
 	prompt = strings.Join(strings.Fields(strings.Trim(strings.Trim(prompt, " ")+" "+params, " ")), " ")
+	// midjourney will replace — to --, so we need to replace it back for hash
 	prompt = strings.ReplaceAll(prompt, "—", "--")
 	taskId = getHashFromPrompt(prompt)
-	log.Println("prompt:", prompt, "taskId:", taskId)
-
+	log.Println("start task:", taskId, "prompt:", prompt)
 	taskResultChannel = make(chan *ImageGenerationResult, 10)
 	m.taskResultChannels[taskId] = taskResultChannel
 	if len(m.taskChan) == cap(m.taskChan) {
@@ -161,7 +161,7 @@ func (m *MidJourneyService) onDiscordMessage(s *discordgo.Session, message *disc
 		if message.ReferencedMessage == nil {
 			// receive origin image
 			taskId, promptStr := getHashFromMessage(message.Content)
-			log.Println("receive origin image:", attachment.URL, "taskId:", taskId, "promptStr:", promptStr)
+			log.Println("receive origin image:", attachment.URL, "taskId:", taskId)
 			fileId := getIdFromURL(attachment.URL)
 			if taskId != "" && m.taskResultChannels[taskId] != nil {
 				m.messageIdToTaskIdMap[message.ID] = taskId
@@ -175,7 +175,7 @@ func (m *MidJourneyService) onDiscordMessage(s *discordgo.Session, message *disc
 					time.Sleep(time.Duration((rand.Intn(2000))+1000) * time.Millisecond)
 				}
 			} else {
-				log.Println("no task id found for message: ", message.Content)
+				log.Println("no task id found for message: ", message.Content, "prompt:", promptStr)
 			}
 		} else {
 			// receive upscaling image
