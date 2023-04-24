@@ -158,8 +158,8 @@ func (m *MidJourneyService) onDiscordMessage(s *discordgo.Session, message *disc
 	for _, attachment := range message.Attachments {
 		if message.ReferencedMessage == nil {
 			// receive origin image
-			log.Println("receive origin image: ", attachment.URL)
 			taskId, promptStr := getHashFromMessage(message.Content)
+			log.Println("receive origin image:", attachment.URL, "taskId:", taskId, "promptStr:", promptStr)
 			fileId := getIdFromURL(attachment.URL)
 			if taskId != "" && m.taskResultChannels[taskId] != nil {
 				m.messageIdToTaskIdMap[message.ID] = taskId
@@ -309,7 +309,7 @@ func getHashFromMessage(message string) (hashStr, promptStr string) {
 	matches := re.FindStringSubmatch(message)
 	if len(matches) > 1 {
 		promptStr = strings.Trim(matches[1], " ")
-		h := md5.Sum([]byte(matches[1]))
+		h := md5.Sum([]byte(promptStr))
 		hashStr = hex.EncodeToString(h[:])
 		if len(hashStr) > 32 {
 			hashStr = hashStr[:32]
