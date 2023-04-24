@@ -70,6 +70,7 @@ func (m *MidJourneyService) Imagine(prompt string, params string) (taskId string
 
 	params += " --seed " + strconv.Itoa(rand.Intn(math.MaxUint32))
 	prompt = strings.Join(strings.Fields(strings.Trim(strings.Trim(prompt, " ")+" "+params, " ")), " ")
+	prompt = strings.ReplaceAll(prompt, "—", "--")
 	taskId = getHashFromPrompt(prompt)
 	log.Println("prompt:", prompt, "taskId:", taskId)
 
