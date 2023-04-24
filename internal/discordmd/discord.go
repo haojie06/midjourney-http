@@ -168,6 +168,8 @@ func (m *MidJourneyService) onDiscordMessage(s *discordgo.Session, message *disc
 				for i := 1; i <= m.config.UpscaleCount; i++ {
 					if code := m.upscaleRequest(fileId, i, message.ID); code >= 400 {
 						log.Println("failed to upscale image, code: ", code)
+					} else {
+						log.Printf("upscale image %s - %d\n", fileId, i)
 					}
 					time.Sleep(time.Duration((rand.Intn(2000))+1000) * time.Millisecond)
 				}
