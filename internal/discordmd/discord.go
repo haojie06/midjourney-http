@@ -346,7 +346,7 @@ func getHashFromPrompt(prompt, seed string) (hashStr string) {
 
 func getHashFromEmbeds(message string) (hashStr string) {
 	// get seed and replace all links with it
-	linkRe := regexp.MustCompile(`<https?:\/\/\S+\>`)
+	linkRe := regexp.MustCompile(`https?:\/\/\S+`)
 	seedRe := regexp.MustCompile(`--seed\s+(\d+)`)
 	matchSeeds := seedRe.FindStringSubmatch(message)
 	if len(matchSeeds) < 2 {
