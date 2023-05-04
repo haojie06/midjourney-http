@@ -67,14 +67,15 @@ type MidJourneyService struct {
 func (m *MidJourneyService) Imagine(prompt string, params string) (taskId string, taskResultChannel chan *ImageGenerationResult, err error) {
 	m.rwLock.Lock()
 	defer m.rwLock.Unlock()
-
-	params += " --seed " + strconv.Itoa(rand.Intn(math.MaxUint32))
+	rand.Seed(time.Now().UnixNano())
+	seed := strconv.Itoa(rand.Intn(math.MaxUint32))
+	params += " --seed " + seed
 	prompt = strings.Join(strings.Fields(strings.Trim(strings.Trim(prompt, " ")+" "+params, " ")), " ")
 	// midjourney will replace — to --, so we need to replace it back for hash
 	prompt = strings.ReplaceAll(prompt, "—", "--")
-	taskId = getHashFromPrompt(prompt)
+	taskId = getHashFromPrompt(prompt, seed)
 	log.Println("start task:", taskId, "prompt:", prompt)
-	taskResultChannel = make(chan *ImageGenerationResult, 10)
+	taskResultChannel = make(chan *ImageGenerationResult, 30)
 	m.taskResultChannels[taskId] = taskResultChannel
 	if len(m.taskChan) == cap(m.taskChan) {
 		err = ErrTooManyTasks
@@ -135,7 +136,7 @@ func (m *MidJourneyService) Start(c MidJourneyServiceConfig) {
 func (m *MidJourneyService) onDiscordMessage(s *discordgo.Session, message *discordgo.MessageCreate) {
 	if len(message.Embeds) > 0 {
 		for _, embed := range message.Embeds {
-			if embed.Title == "Blocked" || embed.Title == "Banned prompt" || embed.Title == "Invalid parameter" || embed.Title == "Banned prompt detected" {
+			if embed.Title == "Blocked" || embed.Title == "Banned prompt" || embed.Title == "Invalid parameter" || embed.Title == "Banned prompt detected" || embed.Title == "Invalid link" {
 				taskId := getHashFromEmbeds(embed.Footer.Text)
 				log.Printf("%s prompt occoured in task: %s\n", embed.Title, taskId)
 				log.Printf("desc: %s\n", embed.Description)
@@ -307,21 +308,34 @@ func isUUIDString(id string) bool {
 }
 
 func getHashFromMessage(message string) (hashStr, promptStr string) {
-	re := regexp.MustCompile(`\*{2}(.+?)\*{2}`)
-	matches := re.FindStringSubmatch(message)
-	if len(matches) > 1 {
-		promptStr = strings.Trim(matches[1], " ")
-		h := md5.Sum([]byte(promptStr))
-		hashStr = hex.EncodeToString(h[:])
-		if len(hashStr) > 32 {
-			hashStr = hashStr[:32]
-		}
-		return
+	promptRe := regexp.MustCompile(`\*{2}(.+?)\*{2}`)
+	linkRe := regexp.MustCompile(`<https?:\/\/\S+\>`)
+	seedRe := regexp.MustCompile(`--seed\s+(\d+)`)
+	matches := promptRe.FindStringSubmatch(message)
+	if len(matches) < 2 {
+		return "", ""
 	}
-	return "", ""
+	promptStr = strings.Trim(matches[1], " ")
+	seedMatchs := seedRe.FindStringSubmatch(message)
+	if len(seedMatchs) < 2 {
+		return "", ""
+	}
+	seed := seedMatchs[1]
+	promptStr = linkRe.ReplaceAllString(promptStr, seed)
+	// print("get hash from message: ", promptStr, "\n")
+	h := md5.Sum([]byte(promptStr))
+	hashStr = hex.EncodeToString(h[:])
+	if len(hashStr) > 32 {
+		hashStr = hashStr[:32]
+	}
+	return
 }
 
-func getHashFromPrompt(prompt string) (hashStr string) {
+func getHashFromPrompt(prompt, seed string) (hashStr string) {
+	// replace all image links with seed, because image link will change in response
+	linkRe := regexp.MustCompile(`\bhttps?://\S+\b`)
+	prompt = linkRe.ReplaceAllString(prompt, seed)
+	// print("get hash from prompt: ", prompt, "\n")
 	h := md5.Sum([]byte(prompt))
 	hashStr = hex.EncodeToString(h[:])
 	if len(hashStr) > 32 {
@@ -331,13 +345,23 @@ func getHashFromPrompt(prompt string) (hashStr string) {
 }
 
 func getHashFromEmbeds(message string) (hashStr string) {
+	// get seed and replace all links with it
+	linkRe := regexp.MustCompile(`<https?:\/\/\S+\>`)
+	seedRe := regexp.MustCompile(`--seed\s+(\d+)`)
+	matchSeeds := seedRe.FindStringSubmatch(message)
+	if len(matchSeeds) < 2 {
+		return ""
+	}
+	seed := matchSeeds[1]
 	message = strings.Trim(message, " ")
 	messageParts := strings.SplitN(message, " ", 2)
 	if len(messageParts) < 2 {
 		return ""
 	}
 	log.Println(messageParts[1])
-	h := md5.Sum([]byte(messageParts[1]))
+	message = linkRe.ReplaceAllString(messageParts[1], seed)
+	// print("get hash from embeds", message, "\n")
+	h := md5.Sum([]byte(message))
 	hashStr = hex.EncodeToString(h[:])
 	if len(hashStr) > 32 {
 		hashStr = hashStr[:32]
