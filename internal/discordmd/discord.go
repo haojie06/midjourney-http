@@ -21,14 +21,17 @@ import (
 )
 
 var (
-	MidJourneyServiceApp *MidJourneyService
-	ErrTooManyTasks      = fmt.Errorf("too many tasks")
-	FailedTitleMessages  = map[string]struct{}{
-		"Blocked":                                {},
-		"Banned prompt":                          {},
-		"Invalid parameter":                      {},
-		"Banned prompt detected":                 {},
-		"Invalid link":                           {},
+	MidJourneyServiceApp               *MidJourneyService
+	ErrTooManyTasks                    = fmt.Errorf("too many tasks")
+	FailedEmbededMessageTitlesInCreate = map[string]struct{}{
+		"Blocked":                            {},
+		"Banned prompt":                      {},
+		"Invalid parameter":                  {},
+		"Banned prompt detected":             {},
+		"Invalid link":                       {},
+		"Sorry! Could not complete the job!": {},
+	}
+	FailedEmbededMessageTitlesInUpdate = map[string]struct{}{
 		"Request cancelled due to image filters": {},
 	}
 )
@@ -48,6 +51,8 @@ func init() {
 		commands: make(map[string]*discordgo.ApplicationCommand),
 
 		rwLock: sync.RWMutex{},
+
+		randGenerator: rand.New(rand.NewSource(time.Now().UnixNano())),
 	}
 }
 
@@ -69,14 +74,15 @@ type MidJourneyService struct {
 	commands map[string]*discordgo.ApplicationCommand
 
 	rwLock sync.RWMutex
+
+	randGenerator *rand.Rand
 }
 
 // imagine a image
 func (m *MidJourneyService) Imagine(prompt string, params string) (taskId string, taskResultChannel chan *ImageGenerationResult, err error) {
 	m.rwLock.Lock()
 	defer m.rwLock.Unlock()
-	rand.Seed(time.Now().UnixNano())
-	seed := strconv.Itoa(rand.Intn(math.MaxUint32))
+	seed := strconv.Itoa(m.randGenerator.Intn(math.MaxUint32))
 	params += " --seed " + seed
 	prompt = strings.Join(strings.Fields(strings.Trim(strings.Trim(prompt, " ")+" "+params, " ")), " ")
 	// midjourney will replace — to --, so we need to replace it back for hash
@@ -110,7 +116,8 @@ func (m *MidJourneyService) Start(c MidJourneyServiceConfig) {
 	for _, command := range commands {
 		m.commands[command.Name] = command
 	}
-	m.discordSession.AddHandler(m.onDiscordMessage)
+	m.discordSession.AddHandler(m.onDiscordMessageCreate)
+	m.discordSession.AddHandler(m.onDiscordMessageUpdate)
 	m.discordSession.Identify.Intents = discordgo.IntentsAll
 	err = m.discordSession.Open()
 	if err != nil {
@@ -140,11 +147,32 @@ func (m *MidJourneyService) Start(c MidJourneyServiceConfig) {
 	}
 }
 
+// when message updated
+func (m *MidJourneyService) onDiscordMessageUpdate(s *discordgo.Session, event *discordgo.MessageUpdate) {
+	for _, embed := range event.Message.Embeds {
+		if _, failed := FailedEmbededMessageTitlesInUpdate[embed.Title]; failed {
+			taskId, _ := getHashFromMessage(event.Message.Content)
+			m.rwLock.Lock()
+			defer m.rwLock.Unlock()
+			if c, exist := m.taskResultChannels[taskId]; exist {
+				log.Println("task:", taskId, "failed")
+				c <- &ImageGenerationResult{
+					TaskId:     taskId,
+					Successful: false,
+					Message:    embed.Title + " " + embed.Description,
+					ImageURLs:  []string{},
+				}
+				delete(m.taskResultChannels, taskId)
+			}
+		}
+	}
+}
+
 // when receive message from discord
-func (m *MidJourneyService) onDiscordMessage(s *discordgo.Session, message *discordgo.MessageCreate) {
-	if len(message.Embeds) > 0 {
-		for _, embed := range message.Embeds {
-			if _, failed := FailedTitleMessages[embed.Title]; failed {
+func (m *MidJourneyService) onDiscordMessageCreate(s *discordgo.Session, event *discordgo.MessageCreate) {
+	if len(event.Embeds) > 0 {
+		for _, embed := range event.Embeds {
+			if _, failed := FailedEmbededMessageTitlesInCreate[embed.Title]; failed {
 				taskId := getHashFromEmbeds(embed.Footer.Text)
 				log.Printf("%s prompt occoured in task: %s\n", embed.Title, taskId)
 				log.Printf("desc: %s\n", embed.Description)
@@ -166,32 +194,32 @@ func (m *MidJourneyService) onDiscordMessage(s *discordgo.Session, message *disc
 
 	m.rwLock.Lock()
 	defer m.rwLock.Unlock()
-	for _, attachment := range message.Attachments {
-		if message.ReferencedMessage == nil {
+	for _, attachment := range event.Attachments {
+		if event.ReferencedMessage == nil {
 			// receive origin image
-			taskId, promptStr := getHashFromMessage(message.Content)
+			taskId, promptStr := getHashFromMessage(event.Content)
 			log.Println("receive origin image:", attachment.URL, "taskId:", taskId)
 			fileId := getIdFromURL(attachment.URL)
 			if taskId != "" && m.taskResultChannels[taskId] != nil {
-				m.messageIdToTaskIdMap[message.ID] = taskId
+				m.messageIdToTaskIdMap[event.ID] = taskId
 				m.originImageURLMap[taskId] = attachment.URL
 				for i := 1; i <= m.config.UpscaleCount; i++ {
-					if code := m.upscaleRequest(fileId, i, message.ID); code >= 400 {
+					if code := m.upscaleRequest(fileId, i, event.ID); code >= 400 {
 						log.Println("failed to upscale image, code: ", code)
 					} else {
 						log.Printf("upscale image %s %d\n", fileId, i)
 					}
-					time.Sleep(time.Duration((rand.Intn(2000))+1000) * time.Millisecond)
+					time.Sleep(time.Duration((m.randGenerator.Intn(2000))+1000) * time.Millisecond)
 				}
 			} else {
-				log.Println("no task id found for message: ", message.Content, "prompt:", promptStr)
+				log.Println("no task id found for message: ", event.Content, "prompt:", promptStr)
 			}
 		} else {
 			// receive upscaling image
-			taskId := m.messageIdToTaskIdMap[message.ReferencedMessage.ID]
+			taskId := m.messageIdToTaskIdMap[event.ReferencedMessage.ID]
 			log.Println("receive upscaled image:", attachment.URL, "tasiId:", taskId)
 			if taskId == "" {
-				log.Println("no task id found for message: ", message.ReferencedMessage.ID)
+				log.Println("no task id found for message: ", event.ReferencedMessage.ID)
 				return
 			}
 			if m.imageURLsMap[taskId] == nil {
@@ -212,7 +240,7 @@ func (m *MidJourneyService) onDiscordMessage(s *discordgo.Session, message *disc
 				delete(m.taskResultChannels, taskId)
 				delete(m.imageURLsMap, taskId)
 				delete(m.originImageURLMap, taskId)
-				delete(m.messageIdToTaskIdMap, message.ReferencedMessage.ID)
+				delete(m.messageIdToTaskIdMap, event.ReferencedMessage.ID)
 			} else {
 				log.Printf("%s image generation not finished, current count: %d\n", taskId, len(m.imageURLsMap[taskId]))
 			}
