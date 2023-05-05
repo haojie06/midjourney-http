@@ -23,6 +23,14 @@ import (
 var (
 	MidJourneyServiceApp *MidJourneyService
 	ErrTooManyTasks      = fmt.Errorf("too many tasks")
+	FailedTitleMessages  = map[string]struct{}{
+		"Blocked":                                {},
+		"Banned prompt":                          {},
+		"Invalid parameter":                      {},
+		"Banned prompt detected":                 {},
+		"Invalid link":                           {},
+		"Request cancelled due to image filters": {},
+	}
 )
 
 func init() {
@@ -136,7 +144,7 @@ func (m *MidJourneyService) Start(c MidJourneyServiceConfig) {
 func (m *MidJourneyService) onDiscordMessage(s *discordgo.Session, message *discordgo.MessageCreate) {
 	if len(message.Embeds) > 0 {
 		for _, embed := range message.Embeds {
-			if embed.Title == "Blocked" || embed.Title == "Banned prompt" || embed.Title == "Invalid parameter" || embed.Title == "Banned prompt detected" || embed.Title == "Invalid link" {
+			if _, failed := FailedTitleMessages[embed.Title]; failed {
 				taskId := getHashFromEmbeds(embed.Footer.Text)
 				log.Printf("%s prompt occoured in task: %s\n", embed.Title, taskId)
 				log.Printf("desc: %s\n", embed.Description)
