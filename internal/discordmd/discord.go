@@ -250,10 +250,11 @@ func (m *MidJourneyService) onDiscordMessageCreate(s *discordgo.Session, event *
 	}
 }
 
-func (m *MidJourneyService) imagineRequest(taskId string, prompt string) int {
+func (m *MidJourneyService) imagineRequest(taskId string, prompt string) (status int) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Println("Recovered in imagineRequest", r)
+			status = 500
 		}
 	}()
 	imagineCommand, exists := m.commands["imagine"]
