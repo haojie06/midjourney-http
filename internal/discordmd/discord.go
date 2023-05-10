@@ -30,6 +30,8 @@ var (
 		"Banned prompt detected":             {},
 		"Invalid link":                       {},
 		"Sorry! Could not complete the job!": {},
+		"Action needed to continue":          {},
+		"Queue full":                         {},
 	}
 	FailedEmbededMessageTitlesInUpdate = map[string]struct{}{
 		"Request cancelled due to image filters": {},
