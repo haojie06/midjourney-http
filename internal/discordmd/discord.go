@@ -251,6 +251,11 @@ func (m *MidJourneyService) onDiscordMessageCreate(s *discordgo.Session, event *
 }
 
 func (m *MidJourneyService) imagineRequest(taskId string, prompt string) int {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Println("Recovered in imagineRequest", r)
+		}
+	}()
 	imagineCommand, exists := m.commands["imagine"]
 	if !exists {
 		log.Println("Imagine command not found")
