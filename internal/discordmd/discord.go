@@ -172,9 +172,18 @@ func (m *MidJourneyService) onDiscordMessageUpdate(s *discordgo.Session, event *
 
 // when receive message from discord
 func (m *MidJourneyService) onDiscordMessageCreate(s *discordgo.Session, event *discordgo.MessageCreate) {
+	defer func() {
+		if err := recover(); err != nil {
+			log.Println("panic on discord message", err)
+		}
+	}()
 	if len(event.Embeds) > 0 {
 		for _, embed := range event.Embeds {
 			if _, failed := FailedEmbededMessageTitlesInCreate[embed.Title]; failed {
+				if embed.Footer == nil {
+					log.Printf("embed footer is nil, embed: %+v\n", embed)
+					continue
+				}
 				taskId := getHashFromEmbeds(embed.Footer.Text)
 				log.Printf("%s prompt occoured in task: %s\n", embed.Title, taskId)
 				log.Printf("desc: %s\n", embed.Description)
