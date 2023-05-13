@@ -2,6 +2,7 @@ package handler
 
 import (
 	"log"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/haojie06/midjourney-http/internal/discordmd"
@@ -32,9 +33,14 @@ func CreateGenerationTask(c *gin.Context) {
 		})
 		return
 	}
-	taskResult := <-taskResultChan
-	log.Printf("task %s completed\n", taskResult.TaskId)
-	// TODO implement webhook
+	timeoutChan := time.After(20 * time.Minute)
+	select {
+	case <-timeoutChan:
+		c.JSON(408, gin.H{"message": "timeout"})
+	case taskResult := <-taskResultChan:
+		log.Printf("task %s completed\n", taskResult.TaskId)
+		// TODO implement webhook
+	}
 }
 
 func GenerationImageFromGetRequest(c *gin.Context) {
@@ -50,22 +56,29 @@ func GenerationImageFromGetRequest(c *gin.Context) {
 		return
 	}
 	log.Printf("task %s created\n", taskId)
-	taskResult := <-taskResultChan
-	if taskResult.Successful {
-		c.JSON(200, model.GenerationTaskResponse{
-			TaskId:         taskId,
-			Status:         "completed",
-			Message:        taskResult.Message,
-			ImageURLs:      taskResult.ImageURLs,
-			OriginImageURL: taskResult.OriginImageURL,
-		})
-	} else {
-		c.JSON(400, model.GenerationTaskResponse{
-			TaskId:         taskId,
-			Status:         "failed",
-			Message:        taskResult.Message,
-			ImageURLs:      taskResult.ImageURLs,
-			OriginImageURL: taskResult.OriginImageURL,
-		})
+	// timeout 20min
+	time.After(20 * time.Minute)
+	select {
+	case <-time.After(20 * time.Minute):
+		c.JSON(408, gin.H{"message": "timeout"})
+	case taskResult := <-taskResultChan:
+		if taskResult.Successful {
+			c.JSON(200, model.GenerationTaskResponse{
+				TaskId:         taskId,
+				Status:         "completed",
+				Message:        taskResult.Message,
+				ImageURLs:      taskResult.ImageURLs,
+				OriginImageURL: taskResult.OriginImageURL,
+			})
+		} else {
+			c.JSON(400, model.GenerationTaskResponse{
+				TaskId:         taskId,
+				Status:         "failed",
+				Message:        taskResult.Message,
+				ImageURLs:      taskResult.ImageURLs,
+				OriginImageURL: taskResult.OriginImageURL,
+			})
+		}
 	}
+
 }
