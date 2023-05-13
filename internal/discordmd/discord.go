@@ -11,6 +11,7 @@ import (
 	"math/rand"
 	"net/http"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -239,7 +240,7 @@ func (m *MidJourneyService) onDiscordMessageCreate(s *discordgo.Session, event *
 			}
 			m.imageURLsMap[taskId] = append(m.imageURLsMap[taskId], attachment.URL)
 			if len(m.imageURLsMap[taskId]) == m.config.UpscaleCount {
-				log.Println("image generation finished")
+				log.Println("image generation finished, current gorouutines:", runtime.NumGoroutine())
 				if c, exist := m.taskResultChannels[taskId]; exist {
 					c <- &ImageGenerationResult{
 						TaskId:         taskId,
