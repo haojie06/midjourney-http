@@ -194,6 +194,8 @@ func (m *MidJourneyService) onDiscordMessageCreate(s *discordgo.Session, event *
 					logger.Warnf("task %s not exist, embed: %+v", taskId, embed)
 				}
 				return
+			} else {
+				logger.Warnf("unknown embed title found: %S", embed.Title)
 			}
 		}
 	}
