@@ -2,6 +2,7 @@ package main
 
 import (
 	"github.com/haojie06/midjourney-http/internal/discordmd"
+	"github.com/haojie06/midjourney-http/internal/logger"
 	"github.com/haojie06/midjourney-http/internal/server"
 	"github.com/spf13/viper"
 )
@@ -21,6 +22,7 @@ func main() {
 	viper.SetDefault("server.port", "9000")
 	host := viper.GetString("server.host")
 	port := viper.GetString("server.port")
+	logger.Infof("service is starting, host: %s, port: %s", host, port)
 	go discordmd.MidJourneyServiceApp.Start(midJourneyConfig)
 	server.Start(host, port)
 }

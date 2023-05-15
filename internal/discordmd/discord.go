@@ -1,16 +1,9 @@
 package discordmd
 
 import (
-	"bytes"
-	"crypto/md5"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
-	"log"
 	"math"
 	"math/rand"
-	"net/http"
-	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -18,7 +11,7 @@ import (
 	"time"
 
 	"github.com/bwmarrin/discordgo"
-	"github.com/google/uuid"
+	"github.com/haojie06/midjourney-http/internal/logger"
 )
 
 var (
@@ -45,13 +38,11 @@ func init() {
 
 		taskResultChannels: make(map[string]chan *ImageGenerationResult),
 
-		originImageURLMap: make(map[string]string),
-
 		imageURLsMap: make(map[string][]string),
 
 		messageIdToTaskIdMap: make(map[string]string),
 
-		commands: make(map[string]*discordgo.ApplicationCommand),
+		discordCommands: make(map[string]*discordgo.ApplicationCommand),
 
 		rwLock: sync.RWMutex{},
 
@@ -68,36 +59,37 @@ type MidJourneyService struct {
 
 	taskResultChannels map[string]chan *ImageGenerationResult
 
-	originImageURLMap map[string]string
-
 	imageURLsMap map[string][]string
 
 	messageIdToTaskIdMap map[string]string
 
-	commands map[string]*discordgo.ApplicationCommand
+	discordCommands map[string]*discordgo.ApplicationCommand
 
 	rwLock sync.RWMutex
 
 	randGenerator *rand.Rand
 }
 
-// imagine a image
+// imagine a image (create a task)
 func (m *MidJourneyService) Imagine(prompt string, params string) (taskId string, taskResultChannel chan *ImageGenerationResult, err error) {
 	m.rwLock.Lock()
 	defer m.rwLock.Unlock()
-	seed := strconv.Itoa(m.randGenerator.Intn(math.MaxUint32))
-	params += " --seed " + seed
-	prompt = strings.Join(strings.Fields(strings.Trim(strings.Trim(prompt, " ")+" "+params, " ")), " ")
-	// midjourney will replace — to --, so we need to replace it back for hash
-	prompt = strings.ReplaceAll(prompt, "—", "--")
-	taskId = getHashFromPrompt(prompt, seed)
-	log.Println("start task:", taskId, "prompt:", prompt)
-	taskResultChannel = make(chan *ImageGenerationResult, 30)
-	m.taskResultChannels[taskId] = taskResultChannel
-	if len(m.taskChan) == cap(m.taskChan) {
+	if len(m.taskResultChannels) > m.config.MaxUnfinishedTasks {
 		err = ErrTooManyTasks
 		return
 	}
+	seed := strconv.Itoa(m.randGenerator.Intn(math.MaxUint32))
+	params += " --seed " + seed
+	// remove extra spaces
+	prompt = strings.Join(strings.Fields(strings.Trim(strings.Trim(prompt, " ")+" "+params, " ")), " ")
+	// midjourney will replace — to --, so we need to replace it before hash sum
+	prompt = strings.ReplaceAll(prompt, "—", "--")
+	// use hash for taskId
+	taskId = getHashFromPrompt(prompt, seed)
+	logger.Infof("task %s is starting, prompt: %s", taskId, prompt)
+	taskResultChannel = make(chan *ImageGenerationResult, m.config.MaxUnfinishedTasks)
+	m.taskResultChannels[taskId] = taskResultChannel
+	// send task
 	m.taskChan <- &imageGenerationTask{
 		taskId: taskId,
 		prompt: prompt,
@@ -109,38 +101,41 @@ func (m *MidJourneyService) Start(c MidJourneyServiceConfig) {
 	m.config = c
 	ds, err := discordgo.New(c.DiscordToken)
 	if err != nil {
-		panic(err)
+		logger.SugaredZapLogger.Panic(err)
 	}
 	m.discordSession = ds
+
 	commands, err := m.discordSession.ApplicationCommands(c.DiscordAppId, "")
 	if err != nil {
-		panic(err)
+		logger.SugaredZapLogger.Panic(err)
 	}
 	for _, command := range commands {
-		m.commands[command.Name] = command
+		m.discordCommands[command.Name] = command
 	}
+
 	m.discordSession.AddHandler(m.onDiscordMessageCreate)
 	m.discordSession.AddHandler(m.onDiscordMessageUpdate)
 	m.discordSession.Identify.Intents = discordgo.IntentsAll
 	err = m.discordSession.Open()
 	if err != nil {
-		panic(err)
+		logger.SugaredZapLogger.Panic(err)
 	}
+
 	// reveive task and imagine
 	for {
 		task := <-m.taskChan
 		// to avoid discord 429
 		time.Sleep(3 * time.Second)
-
+		// send discord command(/imagine) request to imagine a image
 		statusCode := m.imagineRequest(task.taskId, task.prompt)
 		if statusCode >= 400 {
-			log.Printf("imagine task %s failed, status code: %d\n", task.taskId, statusCode)
+			logger.Warnf("task %s failed, status code: %d\n", task.taskId, statusCode)
 			m.rwLock.Lock()
 			if c, exist := m.taskResultChannels[task.taskId]; exist {
 				c <- &ImageGenerationResult{
 					TaskId:     task.taskId,
 					Successful: false,
-					Message:    fmt.Sprintf("imagine task failed, code: %d", statusCode),
+					Message:    fmt.Sprintf("imagine task: %s failed, code: %d", task.taskId, statusCode),
 					ImageURLs:  []string{},
 				}
 				delete(m.taskResultChannels, task.taskId)
@@ -150,7 +145,7 @@ func (m *MidJourneyService) Start(c MidJourneyServiceConfig) {
 	}
 }
 
-// when message updated
+// when discord message updated (for example, when a request is intercepted by a filter)
 func (m *MidJourneyService) onDiscordMessageUpdate(s *discordgo.Session, event *discordgo.MessageUpdate) {
 	for _, embed := range event.Message.Embeds {
 		if _, failed := FailedEmbededMessageTitlesInUpdate[embed.Title]; failed {
@@ -158,7 +153,7 @@ func (m *MidJourneyService) onDiscordMessageUpdate(s *discordgo.Session, event *
 			m.rwLock.Lock()
 			defer m.rwLock.Unlock()
 			if c, exist := m.taskResultChannels[taskId]; exist {
-				log.Println("task:", taskId, "failed")
+				logger.Infof("task %s failed, reason: %s descripiton: %s", taskId, embed.Title, embed.Description)
 				c <- &ImageGenerationResult{
 					TaskId:     taskId,
 					Successful: false,
@@ -171,23 +166,19 @@ func (m *MidJourneyService) onDiscordMessageUpdate(s *discordgo.Session, event *
 	}
 }
 
-// when receive message from discord
+// when receive message from discord(image generated, upscaled, etc.)
 func (m *MidJourneyService) onDiscordMessageCreate(s *discordgo.Session, event *discordgo.MessageCreate) {
-	defer func() {
-		if err := recover(); err != nil {
-			log.Println("panic on discord message", err)
-		}
-	}()
+	// warn or error message are embeded messages with title and description
 	if len(event.Embeds) > 0 {
 		for _, embed := range event.Embeds {
 			if _, failed := FailedEmbededMessageTitlesInCreate[embed.Title]; failed {
 				if embed.Footer == nil {
-					log.Printf("embed footer is nil, embed: %+v\n", embed)
+					logger.Warnf("embed footer is nil, embed: %+s\n", embed.Title) // Queue full message does not have footer
 					continue
 				}
+				// warn or error message will contain origin prompt in footer, so we can get taskId from it
 				taskId := getHashFromEmbeds(embed.Footer.Text)
-				log.Printf("%s prompt occoured in task: %s\n", embed.Title, taskId)
-				log.Printf("desc: %s\n", embed.Description)
+				logger.Warnf("task %s receive embeded message: %s --- %s", taskId, embed.Title, embed.Description)
 				m.rwLock.Lock()
 				defer m.rwLock.Unlock()
 				if c, exist := m.taskResultChannels[taskId]; exist {
@@ -204,221 +195,63 @@ func (m *MidJourneyService) onDiscordMessageCreate(s *discordgo.Session, event *
 		}
 	}
 
+	// origin message or upscaled message does not have embeded message
 	m.rwLock.Lock()
 	defer m.rwLock.Unlock()
+	// upscaled message has attachments
 	for _, attachment := range event.Attachments {
 		if event.ReferencedMessage == nil {
-			// receive origin image
+			// receive origin image, send upscale request depends on config
 			taskId, promptStr := getHashFromMessage(event.Content)
-			log.Println("receive origin image:", attachment.URL, "taskId:", taskId)
-			fileId := getIdFromURL(attachment.URL)
+			logger.Infof("task %s receive origin image: %s", taskId, attachment.URL)
+			fileId := getFileIdFromURL(attachment.URL)
 			if taskId != "" && m.taskResultChannels[taskId] != nil {
+				// we will use messageId to map upscaled image to origin image
 				m.messageIdToTaskIdMap[event.ID] = taskId
-				m.originImageURLMap[taskId] = attachment.URL
+				m.imageURLsMap[taskId] = make([]string, 1)
+				m.imageURLsMap[taskId][0] = attachment.URL
+				// send upscale request depends on config
 				for i := 1; i <= m.config.UpscaleCount; i++ {
 					if code := m.upscaleRequest(fileId, i, event.ID); code >= 400 {
-						log.Println("failed to upscale image, code: ", code)
+						logger.Errorf("failed to upscale image, code: %d", code)
 					} else {
-						log.Printf("upscale image %s %d\n", fileId, i)
+						logger.Infof("task %s request to upscale image %s %d\n", taskId, fileId, i)
 					}
-					time.Sleep(time.Duration((m.randGenerator.Intn(2000))+1000) * time.Millisecond)
+					time.Sleep(time.Duration((m.randGenerator.Intn(3000))+1000) * time.Millisecond)
 				}
 			} else {
-				log.Println("no task id found for message: ", event.Content, "prompt:", promptStr)
+				logger.Warnf("task %s is not created by this bot, prompt: %s", taskId, promptStr)
 			}
 		} else {
-			// receive upscaling image
+			// receive upscaling image, use referenced message id to map to taskId
 			taskId := m.messageIdToTaskIdMap[event.ReferencedMessage.ID]
-			log.Println("receive upscaled image:", attachment.URL, "tasiId:", taskId)
 			if taskId == "" {
-				log.Println("no task id found for message: ", event.ReferencedMessage.ID)
+				logger.Warnf("no local task found for referenced message: %s", event.ReferencedMessage.ID) // non-local task result
 				return
 			}
-			if m.imageURLsMap[taskId] == nil {
-				log.Println("create image url map for task: ", taskId)
-				m.imageURLsMap[taskId] = make([]string, 0)
-			}
+			logger.Infof("task %s receives upscaled image:", taskId, attachment.URL)
 			m.imageURLsMap[taskId] = append(m.imageURLsMap[taskId], attachment.URL)
-			if len(m.imageURLsMap[taskId]) == m.config.UpscaleCount {
-				log.Println("image generation finished, current gorouutines:", runtime.NumGoroutine())
+			if len(m.imageURLsMap[taskId]) == m.config.UpscaleCount+1 { // +1 for origin image
+				logger.Infof("task %s image generation finished, current goroutine count: %d", taskId, runtime.NumGoroutine())
 				if c, exist := m.taskResultChannels[taskId]; exist {
+					var imageURLs []string
+					if len(m.imageURLsMap[taskId]) > 1 {
+						imageURLs = m.imageURLsMap[taskId][1:]
+					}
 					c <- &ImageGenerationResult{
 						TaskId:         taskId,
 						Successful:     true,
-						ImageURLs:      m.imageURLsMap[taskId],
-						OriginImageURL: m.originImageURLMap[taskId],
+						ImageURLs:      imageURLs,
+						OriginImageURL: m.imageURLsMap[taskId][0],
 					}
 				}
+
 				delete(m.taskResultChannels, taskId)
 				delete(m.imageURLsMap, taskId)
-				delete(m.originImageURLMap, taskId)
 				delete(m.messageIdToTaskIdMap, event.ReferencedMessage.ID)
 			} else {
-				log.Printf("%s image generation not finished, current count: %d\n", taskId, len(m.imageURLsMap[taskId]))
+				logger.Infof("task %s image generation not finished, current images count: %d", taskId, len(m.imageURLsMap[taskId]))
 			}
 		}
 	}
-}
-
-func (m *MidJourneyService) imagineRequest(taskId string, prompt string) (status int) {
-	defer func() {
-		if r := recover(); r != nil {
-			log.Println("Recovered in imagineRequest", r)
-			status = 500
-		}
-	}()
-	imagineCommand, exists := m.commands["imagine"]
-	if !exists {
-		log.Println("Imagine command not found")
-		return 500
-	}
-	var dataOptions []*discordgo.ApplicationCommandInteractionDataOption
-	dataOptions = append(dataOptions, &discordgo.ApplicationCommandInteractionDataOption{
-		Type:  3,
-		Name:  "prompt",
-		Value: prompt,
-	})
-	payload := InteractionRequest{
-		Type:          2,
-		ApplicationID: imagineCommand.ApplicationID,
-		ChannelID:     m.config.DiscordChannelId,
-		SessionID:     m.config.DiscordSessionId,
-		Data: InteractionRequestData{
-			Version:            imagineCommand.Version,
-			ID:                 imagineCommand.ID,
-			Name:               imagineCommand.Name,
-			Type:               int(imagineCommand.Type),
-			Options:            dataOptions,
-			ApplicationCommand: imagineCommand,
-			Attachments:        []interface{}{},
-		},
-	}
-	return m.sendRequest(payload)
-}
-
-func (m *MidJourneyService) upscaleRequest(id string, index int, messageId string) int {
-	payload := InteractionRequestTypeThree{
-		Type:          3,
-		MessageFlags:  0,
-		MessageID:     messageId,
-		ApplicationID: m.config.DiscordAppId,
-		ChannelID:     m.config.DiscordChannelId,
-		SessionID:     m.config.DiscordSessionId,
-		Data: UpSampleData{
-			ComponentType: 2,
-			CustomID:      fmt.Sprintf("MJ::JOB::upsample::%d::%s", index, id),
-		},
-	}
-	return m.sendRequest(payload)
-}
-
-func (m *MidJourneyService) sendRequest(payload interface{}) int {
-	requestBody, err := json.Marshal(payload)
-	if err != nil {
-		log.Println("Error marshalling payload: ", err)
-		panic(err)
-	}
-
-	request, err := http.NewRequest("POST", "https://discord.com/api/v9/interactions", bytes.NewBuffer(requestBody))
-	if err != nil {
-		log.Println("Error creating request: ", err)
-		panic(err)
-	}
-	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("Authorization", m.config.DiscordToken)
-
-	client := &http.Client{}
-	resposne, err := client.Do(request)
-	if err != nil {
-		log.Println("Error sending request: ", err)
-		panic(err)
-	}
-	defer resposne.Body.Close()
-	return resposne.StatusCode
-}
-
-func getIdFromURL(url string) (fileId string) {
-	tempStrs := strings.Split(url, ".")
-	if len(tempStrs) < 2 {
-		return ""
-	}
-	tempStr := tempStrs[len(tempStrs)-2]
-	tempStrs = strings.Split(tempStr, "_")
-	if len(tempStrs) < 2 {
-		return ""
-	}
-
-	if isUUIDString(tempStrs[len(tempStrs)-1]) {
-		fileId = tempStrs[len(tempStrs)-1]
-	} else {
-		fileId = ""
-	}
-	return
-}
-
-func isUUIDString(id string) bool {
-	_, err := uuid.Parse(id)
-	return err == nil
-}
-
-func getHashFromMessage(message string) (hashStr, promptStr string) {
-	promptRe := regexp.MustCompile(`\*{2}(.+?)\*{2}`)
-	linkRe := regexp.MustCompile(`<https?:\/\/\S+\>`)
-	seedRe := regexp.MustCompile(`--seed\s+(\d+)`)
-	matches := promptRe.FindStringSubmatch(message)
-	if len(matches) < 2 {
-		return "", ""
-	}
-	promptStr = strings.Trim(matches[1], " ")
-	seedMatchs := seedRe.FindStringSubmatch(message)
-	if len(seedMatchs) < 2 {
-		return "", ""
-	}
-	seed := seedMatchs[1]
-	promptStr = linkRe.ReplaceAllString(promptStr, seed)
-	// print("get hash from message: ", promptStr, "\n")
-	h := md5.Sum([]byte(promptStr))
-	hashStr = hex.EncodeToString(h[:])
-	if len(hashStr) > 32 {
-		hashStr = hashStr[:32]
-	}
-	return
-}
-
-func getHashFromPrompt(prompt, seed string) (hashStr string) {
-	// replace all image links with seed, because image link will change in response
-	linkRe := regexp.MustCompile(`\bhttps?://\S+\b`)
-	prompt = linkRe.ReplaceAllString(prompt, seed)
-	// print("get hash from prompt: ", prompt, "\n")
-	h := md5.Sum([]byte(prompt))
-	hashStr = hex.EncodeToString(h[:])
-	if len(hashStr) > 32 {
-		hashStr = hashStr[:32]
-	}
-	return
-}
-
-func getHashFromEmbeds(message string) (hashStr string) {
-	// get seed and replace all links with it
-	linkRe := regexp.MustCompile(`https?:\/\/\S+`)
-	seedRe := regexp.MustCompile(`--seed\s+(\d+)`)
-	matchSeeds := seedRe.FindStringSubmatch(message)
-	if len(matchSeeds) < 2 {
-		return ""
-	}
-	seed := matchSeeds[1]
-	message = strings.Trim(message, " ")
-	messageParts := strings.SplitN(message, " ", 2)
-	if len(messageParts) < 2 {
-		return ""
-	}
-	log.Println(messageParts[1])
-	message = linkRe.ReplaceAllString(messageParts[1], seed)
-	// print("get hash from embeds", message, "\n")
-	h := md5.Sum([]byte(message))
-	hashStr = hex.EncodeToString(h[:])
-	if len(hashStr) > 32 {
-		hashStr = hashStr[:32]
-	}
-	return
 }

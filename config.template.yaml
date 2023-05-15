@@ -7,3 +7,4 @@ midJourney:
   discordChannelId: 
   discordSessionId: 
   upscaleCount: 0
+  maxUnfinishedTasks: 10

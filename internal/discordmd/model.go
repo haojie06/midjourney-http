@@ -12,6 +12,8 @@ type MidJourneyServiceConfig struct {
 	DiscordSessionId string `mapstructure:"discordSessionId"` // midjourney session id
 
 	UpscaleCount int `mapstructure:"upscaleCount"`
+
+	MaxUnfinishedTasks int `mapstructure:"maxUnfinishedTasks"`
 }
 
 type InteractionRequestWrapper struct {
