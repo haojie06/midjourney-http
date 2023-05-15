@@ -129,7 +129,7 @@ func (m *MidJourneyService) Start(c MidJourneyServiceConfig) {
 		// send discord command(/imagine) request to imagine a image
 		statusCode := m.imagineRequest(task.taskId, task.prompt)
 		if statusCode >= 400 {
-			logger.Warnf("task %s failed, status code: %d\n", task.taskId, statusCode)
+			logger.Warnf("task %s failed, status code: %d", task.taskId, statusCode)
 			m.rwLock.Lock()
 			if c, exist := m.taskResultChannels[task.taskId]; exist {
 				c <- &ImageGenerationResult{
@@ -173,7 +173,7 @@ func (m *MidJourneyService) onDiscordMessageCreate(s *discordgo.Session, event *
 		for _, embed := range event.Embeds {
 			if _, failed := FailedEmbededMessageTitlesInCreate[embed.Title]; failed {
 				if embed.Footer == nil {
-					logger.Warnf("embed footer is nil, embed: %+s\n", embed.Title) // Queue full message does not have footer
+					logger.Warnf("embed footer is nil, embed: %+v", embed) // Queue full message does not have footer
 					continue
 				}
 				// warn or error message will contain origin prompt in footer, so we can get taskId from it
@@ -182,6 +182,7 @@ func (m *MidJourneyService) onDiscordMessageCreate(s *discordgo.Session, event *
 				m.rwLock.Lock()
 				defer m.rwLock.Unlock()
 				if c, exist := m.taskResultChannels[taskId]; exist {
+					logger.Infof("task %s failed, reason: %s descripiton: %s", taskId, embed.Title, embed.Description)
 					c <- &ImageGenerationResult{
 						TaskId:     taskId,
 						Successful: false,
@@ -189,6 +190,8 @@ func (m *MidJourneyService) onDiscordMessageCreate(s *discordgo.Session, event *
 						ImageURLs:  []string{},
 					}
 					delete(m.taskResultChannels, taskId)
+				} else {
+					logger.Warnf("task %s not exist, embed: %+v", taskId, embed)
 				}
 				return
 			}
@@ -215,7 +218,7 @@ func (m *MidJourneyService) onDiscordMessageCreate(s *discordgo.Session, event *
 					if code := m.upscaleRequest(fileId, i, event.ID); code >= 400 {
 						logger.Errorf("failed to upscale image, code: %d", code)
 					} else {
-						logger.Infof("task %s request to upscale image %s %d\n", taskId, fileId, i)
+						logger.Infof("task %s request to upscale image %s %d", taskId, fileId, i)
 					}
 					time.Sleep(time.Duration((m.randGenerator.Intn(3000))+1000) * time.Millisecond)
 				}
@@ -224,6 +227,7 @@ func (m *MidJourneyService) onDiscordMessageCreate(s *discordgo.Session, event *
 			}
 		} else {
 			// receive upscaling image, use referenced message id to map to taskId
+			// when queue is full, we will also receive a message which refer to origin message
 			taskId := m.messageIdToTaskIdMap[event.ReferencedMessage.ID]
 			if taskId == "" {
 				logger.Warnf("no local task found for referenced message: %s", event.ReferencedMessage.ID) // non-local task result

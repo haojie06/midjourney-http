@@ -23,13 +23,19 @@ func getHashFromPrompt(prompt, seed string) (hashStr string) {
 // calculate hash from embeds footer message
 func getHashFromEmbeds(message string) (hashStr string) {
 	// get seed and replace all links with it
+	// remove the command part
+	parts := strings.SplitN(message, " ", 2)
+	if len(parts) < 2 {
+		return ""
+	}
+	message = parts[1]
 	seed, ok := getLastSeedFromMessage(message)
 	if !ok {
 		return ""
 	}
 	message = strings.Trim(message, " ")
 	message = replaceLinks(message, seed)
-	// print("get hash from embeds", message, "\n")
+	// print("--- get hash from embeds", message, "\n")
 	h := md5.Sum([]byte(message))
 	hashStr = hex.EncodeToString(h[:])
 	if len(hashStr) > 32 {
