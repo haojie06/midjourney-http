@@ -15,7 +15,7 @@ func CreateGenerationTask(c *gin.Context) {
 		c.JSON(400, gin.H{"error": err.Error()})
 		return
 	}
-	taskId, taskResultChan, err := discordmd.MidJourneyServiceApp.Imagine(req.Prompt, req.Params)
+	taskId, taskResultChan, err := discordmd.MidJourneyServiceApp.Imagine(req.Prompt, req.Params, req.FastMode)
 	if err != nil {
 		if err == discordmd.ErrTooManyTasks {
 			c.JSON(429, gin.H{"message": err.Error()})
@@ -47,7 +47,8 @@ func CreateGenerationTask(c *gin.Context) {
 func GenerationImageFromGetRequest(c *gin.Context) {
 	prompt := c.Query("prompt")
 	params := c.Query("params")
-	taskId, taskResultChan, err := discordmd.MidJourneyServiceApp.Imagine(prompt, params)
+	fastMode := c.Query("fast") == "true"
+	taskId, taskResultChan, err := discordmd.MidJourneyServiceApp.Imagine(prompt, params, fastMode)
 	if err != nil {
 		logger.Errorf("task %s failed: %s", taskId, err.Error())
 		if err == discordmd.ErrTooManyTasks {

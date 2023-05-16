@@ -71,6 +71,8 @@ type imageGenerationTask struct {
 	taskId string
 
 	prompt string
+
+	fastMode bool
 }
 
 type ImageGenerationResult struct {

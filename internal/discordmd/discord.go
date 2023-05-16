@@ -71,7 +71,7 @@ type MidJourneyService struct {
 }
 
 // imagine a image (create a task)
-func (m *MidJourneyService) Imagine(prompt string, params string) (taskId string, taskResultChannel chan *ImageGenerationResult, err error) {
+func (m *MidJourneyService) Imagine(prompt, params string, fastMode bool) (taskId string, taskResultChannel chan *ImageGenerationResult, err error) {
 	m.rwLock.Lock()
 	defer m.rwLock.Unlock()
 	if len(m.taskResultChannels) > m.config.MaxUnfinishedTasks {
@@ -91,8 +91,9 @@ func (m *MidJourneyService) Imagine(prompt string, params string) (taskId string
 	m.taskResultChannels[taskId] = taskResultChannel
 	// send task
 	m.taskChan <- &imageGenerationTask{
-		taskId: taskId,
-		prompt: prompt,
+		taskId:   taskId,
+		prompt:   prompt,
+		fastMode: fastMode,
 	}
 	return
 }
@@ -127,6 +128,12 @@ func (m *MidJourneyService) Start(c MidJourneyServiceConfig) {
 		// to avoid discord 429
 		time.Sleep(3 * time.Second)
 		// send discord command(/imagine) request to imagine a image
+		if task.fastMode {
+			if status := m.switchMode(true); status >= 400 {
+				logger.Warnf("switch mode to fast failed, status code: %d", status)
+			}
+			time.Sleep(time.Duration((m.randGenerator.Intn(1000))+1000) * time.Millisecond)
+		}
 		statusCode := m.imagineRequest(task.taskId, task.prompt)
 		if statusCode >= 400 {
 			logger.Warnf("task %s failed, status code: %d", task.taskId, statusCode)
@@ -141,6 +148,14 @@ func (m *MidJourneyService) Start(c MidJourneyServiceConfig) {
 				delete(m.taskResultChannels, task.taskId)
 			}
 			m.rwLock.Unlock()
+		}
+		time.Sleep(time.Duration((m.randGenerator.Intn(1000))+1000) * time.Millisecond)
+		// switch back to slow mode
+		if task.fastMode {
+			if status := m.switchMode(false); status >= 400 {
+				logger.Warnf("switch mode back to slow failed, status code: %d", status)
+			}
+			time.Sleep(time.Duration((m.randGenerator.Intn(1000))+1000) * time.Millisecond)
 		}
 	}
 }
@@ -195,7 +210,7 @@ func (m *MidJourneyService) onDiscordMessageCreate(s *discordgo.Session, event *
 				}
 				return
 			} else {
-				logger.Warnf("unknown embed title found: %S", embed.Title)
+				logger.Warnf("unknown embed title found: %s", embed.Title)
 			}
 		}
 	}

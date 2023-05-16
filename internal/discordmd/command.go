@@ -8,7 +8,45 @@ import (
 	"net/http"
 
 	"github.com/bwmarrin/discordgo"
+	"github.com/haojie06/midjourney-http/internal/logger"
 )
+
+func (m *MidJourneyService) switchMode(fast bool) (status int) {
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Errorf("Recovered in fastRequest %s", r)
+			status = 500
+		}
+	}()
+	var commnad *discordgo.ApplicationCommand
+	var exists bool
+	if fast {
+		commnad, exists = m.discordCommands["fast"]
+	} else {
+		commnad, exists = m.discordCommands["relax"]
+	}
+	if !exists || commnad == nil {
+		logger.Error("Fast/Relax command not found")
+		return 500
+	}
+	payload := InteractionRequest{
+		Type:          2,
+		ApplicationID: commnad.ApplicationID,
+		ChannelID:     m.config.DiscordChannelId,
+		SessionID:     m.config.DiscordSessionId,
+		Data: InteractionRequestData{
+			Version:            commnad.Version,
+			ID:                 commnad.ID,
+			Name:               commnad.Name,
+			Type:               int(commnad.Type),
+			Options:            []*discordgo.ApplicationCommandInteractionDataOption{},
+			ApplicationCommand: commnad,
+			Attachments:        []interface{}{},
+		},
+	}
+	status = m.sendRequest(payload)
+	return
+}
 
 func (m *MidJourneyService) imagineRequest(taskId string, prompt string) (status int) {
 	defer func() {
