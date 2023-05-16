@@ -11,6 +11,8 @@ type GenerationTaskRequest struct {
 
 	ReportType string `json:"report_type"`
 
+	FastMode bool `json:"fast_mode"`
+
 	WebhookConfig WebhookConfig `json:"webhook_config"`
 }
 
