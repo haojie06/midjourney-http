@@ -15,8 +15,9 @@ go run main.go
   ```json
   {
     "prompt": "hello world",
-    "params": "--ar 16:9"
+    "params": "--ar 16:9",
+    "fast_mode": false // optional
   }
   ```
 
-- GET /image?prompt=hello world&params=--ar 16:9
+- GET /image?prompt=hello world&params=--ar 16:9&fast_mode=false
