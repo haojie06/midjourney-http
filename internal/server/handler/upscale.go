@@ -22,7 +22,7 @@ func UpscaleImageFromGetRequest(c *gin.Context) {
 		return
 	}
 	select {
-	case <-time.After(15 * time.Minute):
+	case <-time.After(10 * time.Minute):
 		// discordmd.MidJourneyServiceApp.RemoveTaskRuntime(taskId)
 		logger.Infof("task %s timeout", taskId)
 		c.JSON(408, gin.H{"message": "timeout"})
