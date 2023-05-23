@@ -36,6 +36,7 @@ func CreateGenerationTask(c *gin.Context) {
 	timeoutChan := time.After(60 * time.Minute)
 	select {
 	case <-timeoutChan:
+		discordmd.MidJourneyServiceApp.RemoveTaskRuntime(taskId)
 		logger.Infof("task %s timeout", taskId)
 		c.JSON(408, gin.H{"message": "timeout"})
 	case taskResult := <-taskResultChan:

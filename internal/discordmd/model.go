@@ -67,7 +67,6 @@ type InteractionRequestApplicationCommand struct {
 }
 
 type imageGenerationTask struct {
-	// 任务ID
 	taskId string
 
 	prompt string
@@ -76,7 +75,6 @@ type imageGenerationTask struct {
 }
 
 type ImageGenerationResult struct {
-	// 任务ID
 	TaskId string `json:"task_id"`
 
 	Successful bool `json:"successful"`
@@ -85,5 +83,23 @@ type ImageGenerationResult struct {
 
 	OriginImageURL string `json:"origin_image_url"`
 
+	OriginImageMessageId string `json:"origin_image_message_id"`
+
 	ImageURLs []string `json:"image_urls"`
+}
+
+type TaskRuntime struct {
+	TaskId string
+
+	ResultChannel chan *ImageGenerationResult
+
+	OriginImageURL string
+
+	OriginImageMessageId string
+
+	UpscaledImageURLs []string
+
+	CreatedAt int64
+
+	UpdatedAt int64
 }
