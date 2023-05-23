@@ -210,7 +210,7 @@ func (m *MidJourneyService) onDiscordMessageCreate(s *discordgo.Session, event *
 				}
 				return
 			} else {
-				logger.Warnf("unknown embed title found: %s", embed.Title)
+				logger.Warnf("unknown embed title found: %s \n %s", embed.Title, embed.Description)
 			}
 		}
 	}
