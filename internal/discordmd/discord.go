@@ -126,7 +126,7 @@ func (m *MidJourneyService) Start(c MidJourneyServiceConfig) {
 	for {
 		task := <-m.taskChan
 		// to avoid discord 429
-		time.Sleep(3 * time.Second)
+		time.Sleep(2 * time.Second)
 		// send discord command(/imagine) request to imagine a image
 		if task.fastMode {
 			if status := m.switchMode(true); status >= 400 {
@@ -271,7 +271,7 @@ func (m *MidJourneyService) onDiscordMessageCreate(s *discordgo.Session, event *
 				delete(m.imageURLsMap, taskId)
 				delete(m.messageIdToTaskIdMap, event.ReferencedMessage.ID)
 			} else {
-				logger.Infof("task %s image generation not finished, current images count: %d", taskId, len(m.imageURLsMap[taskId]))
+				logger.Infof("task %s image generation not finished, current images count: %d/%d", taskId, len(m.imageURLsMap[taskId]), m.config.UpscaleCount+1)
 			}
 		}
 	}
