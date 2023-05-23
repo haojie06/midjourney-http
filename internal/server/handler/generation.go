@@ -15,7 +15,7 @@ func CreateGenerationTask(c *gin.Context) {
 		c.JSON(400, gin.H{"error": err.Error()})
 		return
 	}
-	taskId, taskResultChan, err := discordmd.MidJourneyServiceApp.Imagine(req.Prompt, req.Params, req.FastMode)
+	taskId, taskResultChan, err := discordmd.MidJourneyServiceApp.Imagine(req.Prompt, req.Params, req.FastMode, req.AutoUpscale)
 	if err != nil {
 		if err == discordmd.ErrTooManyTasks {
 			c.JSON(429, gin.H{"message": err.Error()})
@@ -33,14 +33,21 @@ func CreateGenerationTask(c *gin.Context) {
 		})
 		return
 	}
-	timeoutChan := time.After(60 * time.Minute)
 	select {
-	case <-timeoutChan:
+	case <-time.After(60 * time.Minute):
+		discordmd.MidJourneyServiceApp.RemoveTaskRuntime(taskId)
 		logger.Infof("task %s timeout", taskId)
 		c.JSON(408, gin.H{"message": "timeout"})
 	case taskResult := <-taskResultChan:
-		logger.Infof("task %s completed", taskResult.TaskId)
 		// TODO implement webhook
+		logger.Infof("task %s completed", taskResult.TaskId)
+		c.JSON(200, model.GenerationTaskResponse{
+			TaskId:         taskResult.TaskId,
+			Status:         "completed",
+			Message:        "success",
+			OriginImageURL: taskResult.OriginImageURL,
+			ImageURLs:      taskResult.ImageURLs,
+		})
 	}
 }
 
@@ -48,7 +55,8 @@ func GenerationImageFromGetRequest(c *gin.Context) {
 	prompt := c.Query("prompt")
 	params := c.Query("params")
 	fastMode := c.Query("fast") == "true"
-	taskId, taskResultChan, err := discordmd.MidJourneyServiceApp.Imagine(prompt, params, fastMode)
+	autoScale := c.Query("auto_scale") == "true"
+	taskId, taskResultChan, err := discordmd.MidJourneyServiceApp.Imagine(prompt, params, fastMode, autoScale)
 	if err != nil {
 		logger.Errorf("task %s failed: %s", taskId, err.Error())
 		if err == discordmd.ErrTooManyTasks {
@@ -59,8 +67,6 @@ func GenerationImageFromGetRequest(c *gin.Context) {
 		return
 	}
 	logger.Infof("task %s created", taskId)
-	// timeout 20min
-	time.After(20 * time.Minute)
 	select {
 	case <-time.After(60 * time.Minute):
 		logger.Infof("task %s timeout", taskId)

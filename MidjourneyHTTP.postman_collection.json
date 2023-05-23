@@ -1,0 +1,156 @@
+{
+	"info": {
+		"_postman_id": "9aed8aab-c6b1-4eb8-b724-2b141b78d816",
+		"name": "MidjourneyHTTP",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Imagine an image",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/image?prompt=a cute anime girl&params=--ar 16:9&fast=true",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"image"
+					],
+					"query": [
+						{
+							"key": "prompt",
+							"value": "a cute anime girl"
+						},
+						{
+							"key": "params",
+							"value": "--ar 16:9"
+						},
+						{
+							"key": "fast",
+							"value": "true"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Upscale an image",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/upscale?task_id=548f7eb76f0fe9efdafa3b8e11600c70&index=1",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"upscale"
+					],
+					"query": [
+						{
+							"key": "task_id",
+							"value": "548f7eb76f0fe9efdafa3b8e11600c70"
+						},
+						{
+							"key": "index",
+							"value": "1"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Create an imagine task",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"prompt\": \"cute anime girl\",\n    \"params\": \"--ar 16:9 --niji 5\",\n    \"fast_mode\": true\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{base_url}}/image-task",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"image-task"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Create an upscale task",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"task_id\": \"e3ef2bb9e382c605b022be496abf7be5\",\n    \"index\": \"1\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{base_url}}/upscale-task",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"upscale-task"
+					]
+				}
+			},
+			"response": []
+		}
+	],
+	"auth": {
+		"type": "apikey",
+		"apikey": [
+			{
+				"key": "key",
+				"value": "API-KEY",
+				"type": "string"
+			}
+		]
+	},
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:9000",
+			"type": "default"
+		}
+	]
+}
