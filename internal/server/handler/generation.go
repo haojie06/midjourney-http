@@ -39,8 +39,15 @@ func CreateGenerationTask(c *gin.Context) {
 		logger.Infof("task %s timeout", taskId)
 		c.JSON(408, gin.H{"message": "timeout"})
 	case taskResult := <-taskResultChan:
-		logger.Infof("task %s completed", taskResult.TaskId)
 		// TODO implement webhook
+		logger.Infof("task %s completed", taskResult.TaskId)
+		c.JSON(200, model.GenerationTaskResponse{
+			TaskId:         taskResult.TaskId,
+			Status:         "completed",
+			Message:        "success",
+			OriginImageURL: taskResult.OriginImageURL,
+			ImageURLs:      taskResult.ImageURLs,
+		})
 	}
 }
 

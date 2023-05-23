@@ -18,6 +18,12 @@ type GenerationTaskRequest struct {
 	WebhookConfig WebhookConfig `json:"webhook_config"`
 }
 
+type UpscaleTaskRequest struct {
+	TaskId string `json:"task_id"`
+
+	Index string `json:"index"`
+}
+
 type GenerationTaskResponse struct {
 	TaskId string `json:"task_id"`
 

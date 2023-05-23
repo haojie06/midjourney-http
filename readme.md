@@ -10,14 +10,4 @@ cp config.template.yaml config.yaml
 go run main.go
 ```
 
-- POST /generation-task
-
-  ```json
-  {
-    "prompt": "hello world",
-    "params": "--ar 16:9",
-    "fast_mode": false // optional
-  }
-  ```
-
-- GET /image?prompt=hello world&params=--ar 16:9&fast_mode=false
+see the postman file MidjourneyHTTP.postman_collection.json
