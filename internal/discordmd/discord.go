@@ -26,6 +26,7 @@ var (
 		"Sorry! Could not complete the job!": {},
 		"Action needed to continue":          {},
 		"Queue full":                         {},
+		"Action required to continue":        {},
 	}
 	FailedEmbededMessageTitlesInUpdate = map[string]struct{}{
 		"Request cancelled due to image filters": {},
@@ -267,7 +268,7 @@ func (m *MidJourneyService) onDiscordMessageCreate(s *discordgo.Session, event *
 				logger.Warnf("no local task found for referenced message: %s", event.ReferencedMessage.ID) // non-local task result
 				return
 			}
-			logger.Infof("task %s receives upscaled image:", taskRuntime.TaskId, attachment.URL)
+			logger.Infof("task %s receives upscaled image: %s", taskRuntime.TaskId, attachment.URL)
 			taskRuntime.UpscaledImageURLs = append(taskRuntime.UpscaledImageURLs, attachment.URL)
 			if len(taskRuntime.UpscaledImageURLs) == m.config.UpscaleCount {
 				logger.Infof("task %s image generation finished, current goroutine count: %d", taskRuntime.TaskId, runtime.NumGoroutine())
