@@ -29,6 +29,7 @@ var (
 		"Action needed to continue":          {},
 		"Queue full":                         {},
 		"Action required to continue":        {},
+		"Job action restricted":              {},
 	}
 	FailedEmbededMessageTitlesInUpdate = map[string]struct{}{
 		"Request cancelled due to image filters": {},
