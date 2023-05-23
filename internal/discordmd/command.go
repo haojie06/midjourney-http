@@ -84,7 +84,7 @@ func (m *MidJourneyService) imagineRequest(taskId string, prompt string) (status
 	return m.sendRequest(payload)
 }
 
-func (m *MidJourneyService) upscaleRequest(id string, index int, messageId string) int {
+func (m *MidJourneyService) upscaleRequest(id, index, messageId string) int {
 	payload := InteractionRequestTypeThree{
 		Type:          3,
 		MessageFlags:  0,
@@ -94,7 +94,7 @@ func (m *MidJourneyService) upscaleRequest(id string, index int, messageId strin
 		SessionID:     m.config.DiscordSessionId,
 		Data: UpSampleData{
 			ComponentType: 2,
-			CustomID:      fmt.Sprintf("MJ::JOB::upsample::%d::%s", index, id),
+			CustomID:      fmt.Sprintf("MJ::JOB::upsample::%s::%s", index, id),
 		},
 	}
 	return m.sendRequest(payload)

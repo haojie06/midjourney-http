@@ -72,6 +72,8 @@ type imageGenerationTask struct {
 	prompt string
 
 	fastMode bool
+
+	autoUpscale bool
 }
 
 type ImageGenerationResult struct {
@@ -83,23 +85,52 @@ type ImageGenerationResult struct {
 
 	OriginImageURL string `json:"origin_image_url"`
 
-	OriginImageMessageId string `json:"origin_image_message_id"`
-
 	ImageURLs []string `json:"image_urls"`
 }
+
+type ImageUpscaleResult struct {
+	TaskId string `json:"task_id"`
+
+	Successful bool `json:"successful"`
+
+	Message string `json:"message"`
+
+	Index string `json:"index"`
+
+	ImageURL string `json:"image_url"`
+}
+
+type TaskState string
+
+const (
+	TaskStateCreated         TaskState = "created"
+	TaskStateGetOriginImage  TaskState = "get_origin_image"
+	TaskStateAutoUpscaling   TaskState = "auto_upscaling"
+	TaskStateManualUpscaling TaskState = "manual_upscaling"
+)
 
 type TaskRuntime struct {
 	TaskId string
 
 	ResultChannel chan *ImageGenerationResult
 
+	UpscaleResultChannels map[string]chan *ImageUpscaleResult
+
 	OriginImageURL string
+
+	OriginImageId string
 
 	OriginImageMessageId string
 
 	UpscaledImageURLs []string
 
+	UpscaleProcessCount int
+
+	AutoUpscale bool
+
 	CreatedAt int64
 
 	UpdatedAt int64
+
+	State TaskState
 }

@@ -17,6 +17,8 @@ import (
 var (
 	MidJourneyServiceApp               *MidJourneyService
 	ErrTooManyTasks                    = fmt.Errorf("too many tasks")
+	ErrTaskNotFound                    = fmt.Errorf("task not found")
+	ErrFailedToCreateTask              = fmt.Errorf("failed to create task")
 	FailedEmbededMessageTitlesInCreate = map[string]struct{}{
 		"Blocked":                            {},
 		"Banned prompt":                      {},
@@ -64,7 +66,7 @@ type MidJourneyService struct {
 }
 
 // imagine a image (create a task)
-func (m *MidJourneyService) Imagine(prompt, params string, fastMode bool) (taskId string, taskResultChannel chan *ImageGenerationResult, err error) {
+func (m *MidJourneyService) Imagine(prompt, params string, fastMode, autoUpscale bool) (taskId string, taskResultChannel chan *ImageGenerationResult, err error) {
 	m.rwLock.Lock()
 	defer m.rwLock.Unlock()
 	if len(m.taskRuntimes) > m.config.MaxUnfinishedTasks {
@@ -82,16 +84,41 @@ func (m *MidJourneyService) Imagine(prompt, params string, fastMode bool) (taskI
 	logger.Infof("task %s is starting, prompt: %s", taskId, prompt)
 	taskResultChannel = make(chan *ImageGenerationResult, m.config.MaxUnfinishedTasks)
 	m.taskRuntimes[taskId] = &TaskRuntime{
-		TaskId:            taskId,
-		ResultChannel:     taskResultChannel,
-		UpscaledImageURLs: make([]string, 0),
-		CreatedAt:         time.Now().Unix(),
+		TaskId:                taskId,
+		ResultChannel:         taskResultChannel,
+		UpscaleResultChannels: make(map[string]chan *ImageUpscaleResult),
+		UpscaledImageURLs:     make([]string, 0),
+		AutoUpscale:           autoUpscale,
+		CreatedAt:             time.Now().Unix(),
+		UpdatedAt:             time.Now().Unix(),
+		State:                 TaskStateCreated,
 	}
 	// send task
 	m.taskChan <- &imageGenerationTask{
-		taskId:   taskId,
-		prompt:   prompt,
-		fastMode: fastMode,
+		taskId:      taskId,
+		prompt:      prompt,
+		fastMode:    fastMode,
+		autoUpscale: autoUpscale,
+	}
+	return
+}
+
+// Upscale a image with given taskId and index
+func (m *MidJourneyService) Upscale(taskId, index string) (upscaleResultChannel chan *ImageUpscaleResult, err error) {
+	// find the task runtime, and get the result channel
+	m.rwLock.Lock()
+	defer m.rwLock.Unlock()
+	taskRuntime, exist := m.taskRuntimes[taskId]
+	if !exist {
+		err = ErrTaskNotFound
+		return
+	}
+	taskRuntime.State = TaskStateManualUpscaling
+	upscaleResultChannel = make(chan *ImageUpscaleResult)
+	taskRuntime.UpscaleResultChannels[index] = upscaleResultChannel
+	if code := m.upscaleRequest(taskRuntime.OriginImageId, index, taskRuntime.OriginImageMessageId); code >= 400 {
+		err = ErrFailedToCreateTask
+		return
 	}
 	return
 }
@@ -239,21 +266,31 @@ func (m *MidJourneyService) onDiscordMessageCreate(s *discordgo.Session, event *
 			// receive origin image, send upscale request depends on config
 			taskId, promptStr := getHashFromMessage(event.Content)
 			logger.Infof("task %s receive origin image: %s", taskId, attachment.URL)
-			fileId := getFileIdFromURL(attachment.URL)
 			taskRuntime, exist := m.taskRuntimes[taskId]
 			if taskId != "" && exist && taskRuntime != nil {
 				// we will use messageId to map upscaled image to origin image
 				taskRuntime.OriginImageMessageId = event.ID
 				taskRuntime.OriginImageURL = attachment.URL
-				// if m.config.UpscaleCount == 0 {
-				// 	// only return origin image and message id
-				// }
-				// send upscale request depends on config
+				taskRuntime.OriginImageId = getFileIdFromURL(attachment.URL)
+				if !taskRuntime.AutoUpscale {
+					// only return origin image url, user can upscale it manually
+					taskRuntime.ResultChannel <- &ImageGenerationResult{
+						TaskId:         taskId,
+						Successful:     true,
+						OriginImageURL: attachment.URL,
+						ImageURLs:      []string{},
+					}
+					return
+				}
+
+				// send upscale request
+				taskRuntime.State = TaskStateAutoUpscaling
 				for i := 1; i <= m.config.UpscaleCount; i++ {
-					if code := m.upscaleRequest(fileId, i, event.ID); code >= 400 {
+					if code := m.upscaleRequest(taskRuntime.OriginImageId, strconv.Itoa(i), event.ID); code >= 400 {
 						logger.Errorf("failed to upscale image, code: %d", code)
+						taskRuntime.UpscaleProcessCount += 1
 					} else {
-						logger.Infof("task %s request to upscale image %s %d", taskId, fileId, i)
+						logger.Infof("task %s request to upscale image %s %d", taskId, taskRuntime.OriginImageId, i)
 					}
 					time.Sleep(time.Duration((m.randGenerator.Intn(3000))+1000) * time.Millisecond)
 				}
@@ -270,17 +307,35 @@ func (m *MidJourneyService) onDiscordMessageCreate(s *discordgo.Session, event *
 			}
 			logger.Infof("task %s receives upscaled image: %s", taskRuntime.TaskId, attachment.URL)
 			taskRuntime.UpscaledImageURLs = append(taskRuntime.UpscaledImageURLs, attachment.URL)
-			if len(taskRuntime.UpscaledImageURLs) == m.config.UpscaleCount {
-				logger.Infof("task %s image generation finished, current goroutine count: %d", taskRuntime.TaskId, runtime.NumGoroutine())
-				taskRuntime.ResultChannel <- &ImageGenerationResult{
-					TaskId:         taskRuntime.TaskId,
-					Successful:     true,
-					ImageURLs:      taskRuntime.UpscaledImageURLs,
-					OriginImageURL: taskRuntime.OriginImageURL,
+			switch taskRuntime.State {
+			case TaskStateAutoUpscaling:
+				taskRuntime.UpscaleProcessCount += 1
+				if taskRuntime.UpscaleProcessCount == m.config.UpscaleCount {
+					logger.Infof("task %s image generation finished, current goroutine count: %d", taskRuntime.TaskId, runtime.NumGoroutine())
+					taskRuntime.ResultChannel <- &ImageGenerationResult{
+						TaskId:         taskRuntime.TaskId,
+						Successful:     true,
+						ImageURLs:      taskRuntime.UpscaledImageURLs,
+						OriginImageURL: taskRuntime.OriginImageURL,
+					}
+					m.RemoveTaskRuntime(taskRuntime.TaskId)
+				} else {
+					logger.Infof("task %s image generation not finished, current images count: %d/%d", taskRuntime.TaskId, len(taskRuntime.UpscaledImageURLs), m.config.UpscaleCount)
 				}
-				m.RemoveTaskRuntime(taskRuntime.TaskId)
-			} else {
-				logger.Infof("task %s image generation not finished, current images count: %d/%d", taskRuntime.TaskId, len(taskRuntime.UpscaledImageURLs), m.config.UpscaleCount)
+			case TaskStateManualUpscaling:
+				// get index from message
+				index := getImageIndexFromMessage(event.Content)
+				c, exist := taskRuntime.UpscaleResultChannels[index]
+				if !exist {
+					logger.Warnf("task %s does not have matched upscale channel, index: %s", taskRuntime.TaskId, index)
+					return
+				}
+				c <- &ImageUpscaleResult{
+					TaskId:     taskRuntime.TaskId,
+					Successful: true,
+					ImageURL:   attachment.URL,
+					Index:      index,
+				}
 			}
 		}
 	}

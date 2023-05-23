@@ -98,3 +98,12 @@ func getFileIdFromURL(url string) (fileId string) {
 	fileId = match[len(match)-1][1]
 	return
 }
+
+func getImageIndexFromMessage(message string) string {
+	re := regexp.MustCompile(`Image #(\d+)`)
+	match := re.FindStringSubmatch(message)
+	if len(match) > 1 {
+		return match[1]
+	}
+	return ""
+}

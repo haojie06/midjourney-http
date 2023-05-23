@@ -39,7 +39,9 @@ func InnitRouter(apiKey string) *gin.Engine {
 	router.Use(cors.Default())
 	router.Use(PermissionCheckMiddleware(apiKey))
 	pprof.Register(router)
+	
 	router.POST("/generation-task", handler.CreateGenerationTask)
 	router.GET("/image", handler.GenerationImageFromGetRequest)
+	router.GET("/upscale", handler.UpscaleImageFromGetRequest)
 	return router
 }
