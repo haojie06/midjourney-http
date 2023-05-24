@@ -55,6 +55,8 @@ func init() {
 }
 
 type MidJourneyService struct {
+	// request interaction -> get interaction id -> request another interaction, before an interaction is created, no more interaction can be created
+
 	config MidJourneyServiceConfig
 
 	discordSession *discordgo.Session
@@ -98,14 +100,11 @@ func (m *MidJourneyService) Start(c MidJourneyServiceConfig) {
 	}
 
 	// reveive task and send interaction request
-	// 部分对interaction的交互，触发的时候，将设置变量，等待interaction创建
 	for {
 		task := <-m.taskChan
 		time.Sleep(2 * time.Second) // to avoid discord 429
-
 		switch task.TaskType {
 		case MidjourneyTaskTypeImageGeneration:
-			// send discord command(/imagine) request to imagine a image
 			logger.Infof("receive image generation task: %s", task.TaskId)
 			var taskPayload ImageGenerationTaskPayload
 			if err := json.Unmarshal(task.Payload, &taskPayload); err != nil {
