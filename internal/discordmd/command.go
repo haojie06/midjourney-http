@@ -185,14 +185,14 @@ func (m *MidJourneyService) describeRequest(filename string, size int, file io.R
 func (m *MidJourneyService) sendRequest(payload interface{}) int {
 	requestBody, err := json.Marshal(payload)
 	if err != nil {
-		log.Println("Error marshalling payload: ", err)
-		panic(err)
+		logger.Errorf("Error marshalling payload: %s", err.Error())
+		return 500
 	}
 
 	request, err := http.NewRequest("POST", "https://discord.com/api/v9/interactions", bytes.NewBuffer(requestBody))
 	if err != nil {
-		log.Println("Error creating request: ", err)
-		panic(err)
+		logger.Errorf("Error creating request: %s", err.Error())
+		return 500
 	}
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Authorization", m.config.DiscordToken)
@@ -200,8 +200,8 @@ func (m *MidJourneyService) sendRequest(payload interface{}) int {
 	client := &http.Client{}
 	resposne, err := client.Do(request)
 	if err != nil {
-		log.Println("Error sending request: ", err)
-		panic(err)
+		logger.Errorf("Error sending request: %s", err.Error())
+		return 500
 	}
 	defer resposne.Body.Close()
 	return resposne.StatusCode
