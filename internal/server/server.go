@@ -45,5 +45,7 @@ func InnitRouter(apiKey string) *gin.Engine {
 
 	router.POST("/upscale-task", handler.CreateUpscaleTask)
 	router.GET("/upscale", handler.UpscaleImageFromGetRequest)
+
+	router.POST("/describe-task", handler.CreateDescribeTask)
 	return router
 }

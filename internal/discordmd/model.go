@@ -100,6 +100,32 @@ type ImageUpscaleResult struct {
 	ImageURL string `json:"image_url"`
 }
 
+type AttachmentRequest struct {
+	Files []AttachmentFile `json:"files"`
+}
+
+type AttachmentFile struct {
+	FileName string `json:"filename"`
+	FileSize int    `json:"file_size"`
+	Id       string `json:"id"`
+}
+
+type AttachmentResponse struct {
+	Attachments []AttachmentInResponse `json:"attachments"`
+}
+
+type AttachmentInResponse struct {
+	Id             int    `json:"id"`
+	UploadURL      string `json:"upload_url"`
+	UploadFilename string `json:"upload_filename"`
+}
+
+type AttachmentInCommand struct {
+	Id               string `json:"id"`
+	Filename         string `json:"filename"`
+	UploadedFilename string `json:"uploaded_filename"`
+}
+
 type TaskState string
 
 const (
