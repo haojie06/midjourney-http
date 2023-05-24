@@ -15,7 +15,7 @@ func CreateUpscaleTask(c *gin.Context) {
 		c.JSON(400, gin.H{"error": err.Error()})
 		return
 	}
-	upscaleResultChan, err := discordmd.MidJourneyServiceApp.Upscale(req.TaskId, req.Index)
+	allocatedBotId, upscaleResultChan, err := discordmd.MidJourneyServiceApp.Upscale(req.BotId, req.TaskId, req.Index)
 	if err != nil {
 		c.JSON(400, gin.H{"message": err.Error()})
 		return
@@ -26,6 +26,7 @@ func CreateUpscaleTask(c *gin.Context) {
 	case taskResult := <-upscaleResultChan:
 		logger.Infof("task %s upscale %s completed", taskResult.TaskId, taskResult.Index)
 		c.JSON(200, model.UpscaleTaskResponse{
+			BotId:    allocatedBotId,
 			TaskId:   taskResult.TaskId,
 			Status:   "completed",
 			Message:  "success",
@@ -36,9 +37,10 @@ func CreateUpscaleTask(c *gin.Context) {
 }
 
 func UpscaleImageFromGetRequest(c *gin.Context) {
+	botId := c.Query("bot_id")
 	taskId := c.Query("task_id")
 	upscaleIndex := c.Query("index")
-	upscaleResultChan, err := discordmd.MidJourneyServiceApp.Upscale(taskId, upscaleIndex)
+	allocatedBotId, upscaleResultChan, err := discordmd.MidJourneyServiceApp.Upscale(botId, taskId, upscaleIndex)
 	if err != nil {
 		c.JSON(400, gin.H{"message": err.Error()})
 		return
@@ -51,6 +53,7 @@ func UpscaleImageFromGetRequest(c *gin.Context) {
 	case taskResult := <-upscaleResultChan:
 		logger.Infof("task %s upscale %s completed", taskResult.TaskId, taskResult.Index)
 		c.JSON(200, model.UpscaleTaskResponse{
+			BotId:    allocatedBotId,
 			TaskId:   taskResult.TaskId,
 			Status:   "completed",
 			Message:  "success",

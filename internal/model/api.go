@@ -5,6 +5,8 @@ type WebhookConfig struct {
 }
 
 type GenerationTaskRequest struct {
+	BotId string `json:"bot_id"`
+
 	Prompt string `json:"prompt"`
 
 	Params string `json:"params"`
@@ -19,12 +21,16 @@ type GenerationTaskRequest struct {
 }
 
 type UpscaleTaskRequest struct {
+	BotId string `json:"bot_id"`
+
 	TaskId string `json:"task_id"`
 
 	Index string `json:"index"`
 }
 
 type GenerationTaskResponse struct {
+	BotId string `json:"bot_id"`
+
 	TaskId string `json:"task_id"`
 
 	Status string `json:"status"` // pending, running, completed, failed
@@ -37,6 +43,8 @@ type GenerationTaskResponse struct {
 }
 
 type UpscaleTaskResponse struct {
+	BotId string `json:"bot_id"`
+
 	TaskId string `json:"task_id"`
 
 	Status string `json:"status"`

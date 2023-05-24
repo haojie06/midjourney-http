@@ -1,3 +1,4 @@
+// bot - discord 内部的命令实现, 主要为 interaction 请求的发送实现
 package discordmd
 
 import (
@@ -12,7 +13,7 @@ import (
 	"github.com/haojie06/midjourney-http/internal/logger"
 )
 
-func (m *MidJourneyService) switchMode(fast bool) (status int) {
+func (bot *DiscordBot) switchMode(fast bool) (status int) {
 	defer func() {
 		if r := recover(); r != nil {
 			logger.Errorf("Recovered in fastRequest %s", r)
@@ -22,9 +23,9 @@ func (m *MidJourneyService) switchMode(fast bool) (status int) {
 	var commnad *discordgo.ApplicationCommand
 	var exists bool
 	if fast {
-		commnad, exists = m.discordCommands["fast"]
+		commnad, exists = bot.discordCommands["fast"]
 	} else {
-		commnad, exists = m.discordCommands["relax"]
+		commnad, exists = bot.discordCommands["relax"]
 	}
 	if !exists || commnad == nil {
 		logger.Error("Fast/Relax command not found")
@@ -33,9 +34,9 @@ func (m *MidJourneyService) switchMode(fast bool) (status int) {
 	payload := InteractionRequest{
 		Type:          2,
 		ApplicationID: commnad.ApplicationID,
-		ChannelID:     m.config.DiscordChannelId,
-		SessionID:     m.config.DiscordSessionId,
-		GuildID:       m.config.DiscordGuildId,
+		ChannelID:     bot.config.DiscordChannelId,
+		SessionID:     bot.config.DiscordSessionId,
+		GuildID:       bot.config.DiscordGuildId,
 		Data: InteractionRequestData{
 			Version:            commnad.Version,
 			ID:                 commnad.ID,
@@ -47,18 +48,18 @@ func (m *MidJourneyService) switchMode(fast bool) (status int) {
 		},
 	}
 
-	status = m.sendRequest(payload)
+	status = bot.sendRequest(payload)
 	return
 }
 
-func (m *MidJourneyService) imagineRequest(taskId string, prompt string) (status int) {
+func (bot *DiscordBot) imagineRequest(taskId string, prompt string) (status int) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Println("Recovered in imagineRequest", r)
 			status = 500
 		}
 	}()
-	imagineCommand, exists := m.discordCommands["imagine"]
+	imagineCommand, exists := bot.discordCommands["imagine"]
 	if !exists {
 		logger.Error("Imagine command not found")
 		return 500
@@ -72,9 +73,9 @@ func (m *MidJourneyService) imagineRequest(taskId string, prompt string) (status
 	payload := InteractionRequest{
 		Type:          2,
 		ApplicationID: imagineCommand.ApplicationID,
-		ChannelID:     m.config.DiscordChannelId,
-		SessionID:     m.config.DiscordSessionId,
-		GuildID:       m.config.DiscordGuildId,
+		ChannelID:     bot.config.DiscordChannelId,
+		SessionID:     bot.config.DiscordSessionId,
+		GuildID:       bot.config.DiscordGuildId,
 		Data: InteractionRequestData{
 			Version:            imagineCommand.Version,
 			ID:                 imagineCommand.ID,
@@ -85,34 +86,34 @@ func (m *MidJourneyService) imagineRequest(taskId string, prompt string) (status
 			Attachments:        []interface{}{},
 		},
 	}
-	return m.sendRequest(payload)
+	return bot.sendRequest(payload)
 }
 
-func (m *MidJourneyService) upscaleRequest(id, index, messageId string) int {
+func (bot *DiscordBot) upscaleRequest(id, index, messageId string) int {
 	payload := InteractionRequestTypeThree{
 		Type:          3,
 		MessageFlags:  0,
 		MessageID:     messageId,
-		ApplicationID: m.config.DiscordAppId,
-		ChannelID:     m.config.DiscordChannelId,
-		GuildID:       m.config.DiscordGuildId,
-		SessionID:     m.config.DiscordSessionId,
+		ApplicationID: bot.config.DiscordAppId,
+		ChannelID:     bot.config.DiscordChannelId,
+		GuildID:       bot.config.DiscordGuildId,
+		SessionID:     bot.config.DiscordSessionId,
 		Data: UpSampleData{
 			ComponentType: 2,
 			CustomID:      fmt.Sprintf("MJ::JOB::upsample::%s::%s", index, id),
 		},
 	}
-	return m.sendRequest(payload)
+	return bot.sendRequest(payload)
 }
 
-func (m *MidJourneyService) describeRequest(filename string, size int, file io.Reader) int {
-	describeCommand, exists := m.discordCommands["describe"]
+func (bot *DiscordBot) describeRequest(filename string, size int, file io.Reader) int {
+	describeCommand, exists := bot.discordCommands["describe"]
 	if !exists {
 		logger.Error("Describe command not found")
 		return 500
 	}
 	// get google api put url
-	apiURL := fmt.Sprintf("https://discord.com/api/v9/channels/%s/attachments", m.config.DiscordChannelId)
+	apiURL := fmt.Sprintf("https://discord.com/api/v9/channels/%s/attachments", bot.config.DiscordChannelId)
 	attachmentRequest := AttachmentRequest{
 		Files: []AttachmentFile{
 			{
@@ -125,7 +126,7 @@ func (m *MidJourneyService) describeRequest(filename string, size int, file io.R
 	requestBody, _ := json.Marshal(attachmentRequest)
 	request, _ := http.NewRequest("POST", apiURL, bytes.NewBuffer(requestBody))
 	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("Authorization", m.config.DiscordToken)
+	request.Header.Set("Authorization", bot.config.DiscordToken)
 	resp, err := http.DefaultClient.Do(request)
 	if err != nil {
 		logger.Errorf("Error sending request: %s", err.Error())
@@ -167,9 +168,9 @@ func (m *MidJourneyService) describeRequest(filename string, size int, file io.R
 	payload := InteractionRequest{
 		Type:          2,
 		ApplicationID: describeCommand.ApplicationID,
-		ChannelID:     m.config.DiscordChannelId,
-		GuildID:       m.config.DiscordGuildId,
-		SessionID:     m.config.DiscordSessionId,
+		ChannelID:     bot.config.DiscordChannelId,
+		GuildID:       bot.config.DiscordGuildId,
+		SessionID:     bot.config.DiscordSessionId,
 		Data: InteractionRequestData{
 			Version:            describeCommand.Version,
 			ID:                 describeCommand.ID,
@@ -185,10 +186,10 @@ func (m *MidJourneyService) describeRequest(filename string, size int, file io.R
 		},
 	}
 
-	return m.sendRequest(payload)
+	return bot.sendRequest(payload)
 }
 
-func (m *MidJourneyService) sendRequest(payload interface{}) int {
+func (bot *DiscordBot) sendRequest(payload interface{}) int {
 	requestBody, err := json.Marshal(payload)
 	if err != nil {
 		logger.Errorf("Error marshalling payload: %s", err.Error())
@@ -201,10 +202,9 @@ func (m *MidJourneyService) sendRequest(payload interface{}) int {
 		return 500
 	}
 	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("Authorization", m.config.DiscordToken)
+	request.Header.Set("Authorization", bot.config.DiscordToken)
 
-	client := &http.Client{}
-	resposne, err := client.Do(request)
+	resposne, err := http.DefaultClient.Do(request)
 	if err != nil {
 		logger.Errorf("Error sending request: %s", err.Error())
 		return 500

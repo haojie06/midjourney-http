@@ -1,3 +1,4 @@
+// bot 对外提供的各方法, 调用后返回一个稍后会被填充的 channel, 用于接收结果
 package discordmd
 
 import (
@@ -12,14 +13,24 @@ import (
 )
 
 // imagine a image (create a task)
-func (m *MidJourneyService) Imagine(prompt, params string, fastMode, autoUpscale bool) (taskId string, imagineResultChannel chan *ImageGenerationResult, err error) {
-	m.rwLock.Lock()
-	defer m.rwLock.Unlock()
-	if len(m.taskRuntimes) > m.config.MaxUnfinishedTasks {
+func (m *MidJourneyService) Imagine(botId, prompt, params string, fastMode, autoUpscale bool) (allocatedBotId string, taskId string, imagineResultChannel chan *ImageGenerationResult, err error) {
+	var bot *DiscordBot
+	var exist bool
+	if botId == "" {
+		bot = m.GetRandomBot()
+	} else if bot, exist = m.discordBots[botId]; !exist {
+		err = ErrBotNotFound
+		return
+	}
+	allocatedBotId = bot.BotId
+	bot.runtimesLock.Lock()
+	defer bot.runtimesLock.Unlock()
+	if len(bot.taskRuntimes) > bot.config.MaxUnfinishedTasks {
 		err = ErrTooManyTasks
 		return
 	}
-	seed := strconv.Itoa(m.randGenerator.Intn(math.MaxUint32))
+
+	seed := strconv.Itoa(bot.randGenerator.Intn(math.MaxUint32))
 	params += " --seed " + seed
 	// remove extra spaces
 	prompt = strings.Join(strings.Fields(strings.Trim(strings.Trim(prompt, " ")+" "+params, " ")), " ")
@@ -28,8 +39,8 @@ func (m *MidJourneyService) Imagine(prompt, params string, fastMode, autoUpscale
 	// use hash for taskId
 	taskId = getHashFromPrompt(prompt, seed)
 	logger.Infof("task %s is starting, prompt: %s", taskId, prompt)
-	imagineResultChannel = make(chan *ImageGenerationResult, m.config.MaxUnfinishedTasks)
-	m.taskRuntimes[taskId] = &TaskRuntime{
+	imagineResultChannel = make(chan *ImageGenerationResult, bot.config.MaxUnfinishedTasks)
+	bot.taskRuntimes[taskId] = &TaskRuntime{
 		TaskId:                taskId,
 		ImagineResultChannel:  imagineResultChannel,
 		UpscaleResultChannels: make(map[string]chan *ImageUpscaleResult),
@@ -46,7 +57,7 @@ func (m *MidJourneyService) Imagine(prompt, params string, fastMode, autoUpscale
 		AutoUpscale: autoUpscale,
 	})
 	// send task
-	m.taskChan <- &MidjourneyTask{
+	bot.taskChan <- &MidjourneyTask{
 		TaskId:   taskId,
 		TaskType: MidjourneyTaskTypeImageGeneration,
 		Payload:  payload,
@@ -55,11 +66,20 @@ func (m *MidJourneyService) Imagine(prompt, params string, fastMode, autoUpscale
 }
 
 // Upscale a image with given taskId and index
-func (m *MidJourneyService) Upscale(taskId, index string) (upscaleResultChannel chan *ImageUpscaleResult, err error) {
+func (m *MidJourneyService) Upscale(botId, taskId, index string) (allocatedBotId string, upscaleResultChannel chan *ImageUpscaleResult, err error) {
+	var bot *DiscordBot
+	var exist bool
+	if botId == "" {
+		bot = m.GetRandomBot()
+	} else if bot, exist = m.discordBots[botId]; !exist {
+		err = ErrBotNotFound
+		return
+	}
 	// find the task runtime, and get the result channel
-	m.rwLock.Lock()
-	defer m.rwLock.Unlock()
-	taskRuntime, exist := m.taskRuntimes[taskId]
+	allocatedBotId = bot.BotId
+	bot.runtimesLock.Lock()
+	defer bot.runtimesLock.Unlock()
+	taskRuntime, exist := bot.taskRuntimes[taskId]
 	if !exist {
 		err = ErrTaskNotFound
 		return
@@ -72,7 +92,7 @@ func (m *MidJourneyService) Upscale(taskId, index string) (upscaleResultChannel 
 		Index:                index,
 		OriginImageMessageId: taskRuntime.OriginImageMessageId,
 	})
-	m.taskChan <- &MidjourneyTask{
+	bot.taskChan <- &MidjourneyTask{
 		TaskId:   taskId,
 		TaskType: MidjourneyTaskTypeImageUpscale,
 		Payload:  payload,
@@ -80,18 +100,27 @@ func (m *MidJourneyService) Upscale(taskId, index string) (upscaleResultChannel 
 	return
 }
 
-func (m *MidJourneyService) Describe(taskId string, file *multipart.FileHeader, filename string, size int) (describeResultChannel chan *DescribeResult, err error) {
-	m.rwLock.Lock()
-	defer m.rwLock.Unlock()
-
+func (m *MidJourneyService) Describe(botId, taskId string, file *multipart.FileHeader, filename string, size int) (allocatedBotId string, describeResultChannel chan *DescribeResult, err error) {
+	var bot *DiscordBot
+	var exist bool
+	if botId == "" {
+		bot = m.GetRandomBot()
+	} else if bot, exist = m.discordBots[botId]; !exist {
+		err = ErrBotNotFound
+		return
+	}
+	allocatedBotId = bot.BotId
+	bot.runtimesLock.Lock()
+	defer bot.runtimesLock.Unlock()
+	bot.FileHeaders[taskId] = file
 	taskRuntime := NewTaskRuntime(taskId, false)
 	describeResultChannel = taskRuntime.DescribeResultChannel
-	m.taskRuntimes[taskId] = taskRuntime
+	bot.taskRuntimes[taskId] = taskRuntime
 	payload, _ := json.Marshal(ImageDescribeTaskPayload{
 		ImageFileName: filename,
 		ImageFileSize: size,
 	})
-	m.taskChan <- &MidjourneyTask{
+	bot.taskChan <- &MidjourneyTask{
 		TaskId:   taskId,
 		TaskType: MidjourneyTaskTypeImageDescribe,
 		Payload:  payload,

@@ -6,7 +6,9 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
-type MidJourneyServiceConfig struct {
+type DiscordBotConfig struct {
+	UniqueId string `mapstructure:"uniqueId"`
+
 	DiscordToken string `mapstructure:"discordToken"`
 
 	DiscordAppId string `mapstructure:"discordAppId"` // midjourney application id

@@ -15,7 +15,7 @@ func CreateGenerationTask(c *gin.Context) {
 		c.JSON(400, gin.H{"message": err.Error()})
 		return
 	}
-	taskId, taskResultChan, err := discordmd.MidJourneyServiceApp.Imagine(req.Prompt, req.Params, req.FastMode, req.AutoUpscale)
+	allocatedBotId, taskId, taskResultChan, err := discordmd.MidJourneyServiceApp.Imagine(req.BotId, req.Prompt, req.Params, req.FastMode, req.AutoUpscale)
 	if err != nil {
 		if err == discordmd.ErrTooManyTasks {
 			c.JSON(429, gin.H{"message": err.Error()})
@@ -35,13 +35,15 @@ func CreateGenerationTask(c *gin.Context) {
 	}
 	select {
 	case <-time.After(60 * time.Minute):
-		discordmd.MidJourneyServiceApp.RemoveTaskRuntime(taskId)
+		// TODO
+		// discordmd.MidJourneyServiceApp.RemoveTaskRuntime(taskId)
 		logger.Infof("task %s timeout", taskId)
 		c.JSON(408, gin.H{"message": "timeout"})
 	case taskResult := <-taskResultChan:
 		// TODO implement webhook
 		logger.Infof("task %s completed", taskResult.TaskId)
 		c.JSON(200, model.GenerationTaskResponse{
+			BotId:          allocatedBotId,
 			TaskId:         taskResult.TaskId,
 			Status:         "completed",
 			Message:        "success",
@@ -54,9 +56,10 @@ func CreateGenerationTask(c *gin.Context) {
 func GenerationImageFromGetRequest(c *gin.Context) {
 	prompt := c.Query("prompt")
 	params := c.Query("params")
+	botId := c.Query("bot_id")
 	fastMode := c.Query("fast") == "true"
 	autoUpscale := c.Query("auto_upscale") == "true"
-	taskId, taskResultChan, err := discordmd.MidJourneyServiceApp.Imagine(prompt, params, fastMode, autoUpscale)
+	allocatedBotId, taskId, taskResultChan, err := discordmd.MidJourneyServiceApp.Imagine(botId, prompt, params, fastMode, autoUpscale)
 	if err != nil {
 		logger.Errorf("task %s failed: %s", taskId, err.Error())
 		if err == discordmd.ErrTooManyTasks {
@@ -75,6 +78,7 @@ func GenerationImageFromGetRequest(c *gin.Context) {
 		logger.Infof("task %s completed, success: %t", taskId, taskResult.Successful)
 		if taskResult.Successful {
 			c.JSON(200, model.GenerationTaskResponse{
+				BotId:          allocatedBotId,
 				TaskId:         taskId,
 				Status:         "completed",
 				Message:        taskResult.Message,
@@ -83,6 +87,7 @@ func GenerationImageFromGetRequest(c *gin.Context) {
 			})
 		} else {
 			c.JSON(400, model.GenerationTaskResponse{
+				BotId:          allocatedBotId,
 				TaskId:         taskId,
 				Status:         "failed",
 				Message:        taskResult.Message,
