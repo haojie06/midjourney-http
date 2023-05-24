@@ -46,6 +46,7 @@ func (m *MidJourneyService) switchMode(fast bool) (status int) {
 			Attachments:        []interface{}{},
 		},
 	}
+
 	status = m.sendRequest(payload)
 	return
 }
@@ -183,6 +184,7 @@ func (m *MidJourneyService) describeRequest(filename string, size int, file io.R
 			}},
 		},
 	}
+
 	return m.sendRequest(payload)
 }
 

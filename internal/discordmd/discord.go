@@ -55,15 +55,11 @@ func init() {
 }
 
 type MidJourneyService struct {
-	// request interaction -> get interaction id -> request another interaction, before an interaction is created, no more interaction can be created
-
 	config MidJourneyServiceConfig
 
 	discordSession *discordgo.Session
 
 	taskChan chan *MidjourneyTask
-
-	interactionMutex sync.Mutex // let interaction request wait for interaction created event
 
 	taskRuntimes map[string]*TaskRuntime
 
@@ -102,18 +98,21 @@ func (m *MidJourneyService) Start(c MidJourneyServiceConfig) {
 	}
 
 	// reveive task and send interaction request
+	// 部分对interaction的交互，触发的时候，将设置变量，等待interaction创建
 	for {
 		task := <-m.taskChan
 		time.Sleep(2 * time.Second) // to avoid discord 429
+
 		switch task.TaskType {
 		case MidjourneyTaskTypeImageGeneration:
+			// send discord command(/imagine) request to imagine a image
 			logger.Infof("receive image generation task: %s", task.TaskId)
 			var taskPayload ImageGenerationTaskPayload
 			if err := json.Unmarshal(task.Payload, &taskPayload); err != nil {
 				logger.Errorf("failed to unmarshal image generation payload, err: %s", err)
 				continue
 			}
-			// send discord command(/imagine) request to imagine a image
+			// XXX 这里同样会导致 interaction created
 			if taskPayload.FastMode {
 				if status := m.switchMode(true); status >= 400 {
 					logger.Warnf("switch mode to fast failed, status code: %d", status)
@@ -228,12 +227,17 @@ func (m *MidJourneyService) onDiscordMessageUpdate(s *discordgo.Session, event *
 }
 
 // when a discord interaction created (for example, when a user click a button or use a slash command)
-func (m *MidJourneyService) onDiscordInteractionCreate(s *discordgo.Session, event *discordgo.InteractionCreate) {
+// 当前面临的最大问题是, discord 的 interaction api request 时，我们无法拿到创建的 interaction 的 id， 因此无法轻易将后续的interaction响应与http请求对应起来
+// 因此我们考虑，所有的 request 发出后，都等待 interaction create 事件，并将 interaction id 与 task id 关联起来
+// 于是在发出 request 之后，任务队列处要阻塞，等待 interaction create 事件(但是又并非所有的 interaction create 事件都是我们想要的)
+// 因此，所有的 interaction request 都需要走 taskChan 来分发，保证没有同时进行的 interaction request
+func (m *MidJourneyService) onDiscordInteractionCreate(s *discordgo.Session, event discordgo.InteractionCreate) {
 	// record current taskId and interactionId
+	// d, _ := json.Marshal(event)
+	// logger.Debugf("receive interaction create event: %s", string(d))
 	// m.rwLock.Lock()
 	// defer m.rwLock.Unlock()
-	// taskRuntime, exist := m.taskRuntimes[m.activeTaskId]
-	// if exist {
+	// if taskRuntime, exist := m.taskRuntimes[m.activeTaskId]; exist {
 	// 	taskRuntime.InteractionId = event.Interaction.ID
 	// 	logger.Infof("%s create interaction: %s", m.activeTaskId, event.Interaction.ID)
 	// }
