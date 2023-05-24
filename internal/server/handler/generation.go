@@ -55,8 +55,8 @@ func GenerationImageFromGetRequest(c *gin.Context) {
 	prompt := c.Query("prompt")
 	params := c.Query("params")
 	fastMode := c.Query("fast") == "true"
-	autoScale := c.Query("auto_upscale") == "auto_upscale"
-	taskId, taskResultChan, err := discordmd.MidJourneyServiceApp.Imagine(prompt, params, fastMode, autoScale)
+	autoUpscale := c.Query("auto_upscale") == "true"
+	taskId, taskResultChan, err := discordmd.MidJourneyServiceApp.Imagine(prompt, params, fastMode, autoUpscale)
 	if err != nil {
 		logger.Errorf("task %s failed: %s", taskId, err.Error())
 		if err == discordmd.ErrTooManyTasks {
