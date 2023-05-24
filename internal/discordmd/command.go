@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 
@@ -34,6 +35,7 @@ func (m *MidJourneyService) switchMode(fast bool) (status int) {
 		ApplicationID: commnad.ApplicationID,
 		ChannelID:     m.config.DiscordChannelId,
 		SessionID:     m.config.DiscordSessionId,
+		GuildID:       m.config.DiscordGuildId,
 		Data: InteractionRequestData{
 			Version:            commnad.Version,
 			ID:                 commnad.ID,
@@ -44,6 +46,7 @@ func (m *MidJourneyService) switchMode(fast bool) (status int) {
 			Attachments:        []interface{}{},
 		},
 	}
+
 	status = m.sendRequest(payload)
 	return
 }
@@ -57,7 +60,7 @@ func (m *MidJourneyService) imagineRequest(taskId string, prompt string) (status
 	}()
 	imagineCommand, exists := m.discordCommands["imagine"]
 	if !exists {
-		log.Println("Imagine command not found")
+		logger.Error("Imagine command not found")
 		return 500
 	}
 	var dataOptions []*discordgo.ApplicationCommandInteractionDataOption
@@ -71,6 +74,7 @@ func (m *MidJourneyService) imagineRequest(taskId string, prompt string) (status
 		ApplicationID: imagineCommand.ApplicationID,
 		ChannelID:     m.config.DiscordChannelId,
 		SessionID:     m.config.DiscordSessionId,
+		GuildID:       m.config.DiscordGuildId,
 		Data: InteractionRequestData{
 			Version:            imagineCommand.Version,
 			ID:                 imagineCommand.ID,
@@ -91,6 +95,7 @@ func (m *MidJourneyService) upscaleRequest(id, index, messageId string) int {
 		MessageID:     messageId,
 		ApplicationID: m.config.DiscordAppId,
 		ChannelID:     m.config.DiscordChannelId,
+		GuildID:       m.config.DiscordGuildId,
 		SessionID:     m.config.DiscordSessionId,
 		Data: UpSampleData{
 			ComponentType: 2,
@@ -100,17 +105,100 @@ func (m *MidJourneyService) upscaleRequest(id, index, messageId string) int {
 	return m.sendRequest(payload)
 }
 
+func (m *MidJourneyService) describeRequest(filename string, size int, file io.Reader) int {
+	describeCommand, exists := m.discordCommands["describe"]
+	if !exists {
+		logger.Error("Describe command not found")
+		return 500
+	}
+	// get google api put url
+	apiURL := fmt.Sprintf("https://discord.com/api/v9/channels/%s/attachments", m.config.DiscordChannelId)
+	attachmentRequest := AttachmentRequest{
+		Files: []AttachmentFile{
+			{
+				FileName: filename,
+				FileSize: size,
+				Id:       "0",
+			},
+		},
+	}
+	requestBody, _ := json.Marshal(attachmentRequest)
+	request, _ := http.NewRequest("POST", apiURL, bytes.NewBuffer(requestBody))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Authorization", m.config.DiscordToken)
+	resp, err := http.DefaultClient.Do(request)
+	if err != nil {
+		logger.Errorf("Error sending request: %s", err.Error())
+		return 500
+	}
+	defer resp.Body.Close()
+	var attachmentResponse AttachmentResponse
+	if err := json.NewDecoder(resp.Body).Decode(&attachmentResponse); err != nil {
+		logger.Errorf("Error decoding response: %s", err.Error())
+		return 500
+	}
+	if len(attachmentResponse.Attachments) == 0 {
+		logger.Error("No attachments found")
+		return 500
+	}
+	// upload file to google storage
+	attachment := attachmentResponse.Attachments[0]
+	request, err = http.NewRequest("PUT", attachment.UploadURL, file)
+	if err != nil {
+		logger.Errorf("Error creating request: %s", err.Error())
+		return 500
+	}
+	request.Header.Set("Content-Type", "image/jpeg")
+	request.Header.Set("Authority", "discord-attachments-uploads-prd.storage.googleapis.com")
+	resp, err = http.DefaultClient.Do(request)
+	if err != nil {
+		logger.Errorf("Error sending request: %s", err.Error())
+		return 500
+	}
+	defer resp.Body.Close()
+
+	var dataOptions []*discordgo.ApplicationCommandInteractionDataOption
+	dataOptions = append(dataOptions, &discordgo.ApplicationCommandInteractionDataOption{
+		Type:  11,
+		Name:  "image",
+		Value: 0,
+	})
+	// send describe command request with attachment
+	payload := InteractionRequest{
+		Type:          2,
+		ApplicationID: describeCommand.ApplicationID,
+		ChannelID:     m.config.DiscordChannelId,
+		GuildID:       m.config.DiscordGuildId,
+		SessionID:     m.config.DiscordSessionId,
+		Data: InteractionRequestData{
+			Version:            describeCommand.Version,
+			ID:                 describeCommand.ID,
+			Name:               describeCommand.Name,
+			Type:               int(describeCommand.Type),
+			Options:            dataOptions,
+			ApplicationCommand: describeCommand,
+			Attachments: []interface{}{AttachmentInCommand{
+				Id:               "0",
+				Filename:         filename,
+				UploadedFilename: attachment.UploadFilename,
+			}},
+		},
+	}
+
+	return m.sendRequest(payload)
+}
+
 func (m *MidJourneyService) sendRequest(payload interface{}) int {
 	requestBody, err := json.Marshal(payload)
 	if err != nil {
-		log.Println("Error marshalling payload: ", err)
-		panic(err)
+		logger.Errorf("Error marshalling payload: %s", err.Error())
+		return 500
 	}
 
 	request, err := http.NewRequest("POST", "https://discord.com/api/v9/interactions", bytes.NewBuffer(requestBody))
 	if err != nil {
-		log.Println("Error creating request: ", err)
-		panic(err)
+		logger.Errorf("Error creating request: %s", err.Error())
+		return 500
 	}
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Authorization", m.config.DiscordToken)
@@ -118,8 +206,8 @@ func (m *MidJourneyService) sendRequest(payload interface{}) int {
 	client := &http.Client{}
 	resposne, err := client.Do(request)
 	if err != nil {
-		log.Println("Error sending request: ", err)
-		panic(err)
+		logger.Errorf("Error sending request: %s", err.Error())
+		return 500
 	}
 	defer resposne.Body.Close()
 	return resposne.StatusCode

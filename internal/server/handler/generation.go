@@ -12,7 +12,7 @@ import (
 func CreateGenerationTask(c *gin.Context) {
 	var req model.GenerationTaskRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(400, gin.H{"error": err.Error()})
+		c.JSON(400, gin.H{"message": err.Error()})
 		return
 	}
 	taskId, taskResultChan, err := discordmd.MidJourneyServiceApp.Imagine(req.Prompt, req.Params, req.FastMode, req.AutoUpscale)

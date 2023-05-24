@@ -114,6 +114,33 @@
 				}
 			},
 			"response": []
+		},
+		{
+			"name": "Describe an image",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "image",
+							"type": "file",
+							"src": "/Users/haojie/Desktop/下载.jpeg"
+						}
+					]
+				},
+				"url": {
+					"raw": "{{base_url}}/describe-task",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"describe-task"
+					]
+				}
+			},
+			"response": []
 		}
 	],
 	"auth": {

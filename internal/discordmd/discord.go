@@ -1,12 +1,12 @@
 package discordmd
 
 import (
+	"encoding/json"
 	"fmt"
-	"math"
 	"math/rand"
+	"mime/multipart"
 	"runtime"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -19,6 +19,7 @@ var (
 	ErrTooManyTasks                    = fmt.Errorf("too many tasks")
 	ErrTaskNotFound                    = fmt.Errorf("task not found")
 	ErrFailedToCreateTask              = fmt.Errorf("failed to create task")
+	ErrFailedToDescribeImage           = fmt.Errorf("failed to describe image")
 	FailedEmbededMessageTitlesInCreate = map[string]struct{}{
 		"Blocked":                            {},
 		"Banned prompt":                      {},
@@ -30,6 +31,7 @@ var (
 		"Queue full":                         {},
 		"Action required to continue":        {},
 		"Job action restricted":              {},
+		"Empty prompt":                       {},
 	}
 	FailedEmbededMessageTitlesInUpdate = map[string]struct{}{
 		"Request cancelled due to image filters": {},
@@ -38,9 +40,11 @@ var (
 
 func init() {
 	MidJourneyServiceApp = &MidJourneyService{
-		taskChan: make(chan *imageGenerationTask, 1),
+		taskChan: make(chan *MidjourneyTask, 1),
 
 		taskRuntimes: make(map[string]*TaskRuntime),
+
+		FileHeaders: make(map[string]*multipart.FileHeader),
 
 		discordCommands: make(map[string]*discordgo.ApplicationCommand),
 
@@ -51,94 +55,23 @@ func init() {
 }
 
 type MidJourneyService struct {
+	// request interaction -> get interaction id -> request another interaction, before an interaction is created, no more interaction can be created
+
 	config MidJourneyServiceConfig
 
 	discordSession *discordgo.Session
 
-	taskChan chan *imageGenerationTask
+	taskChan chan *MidjourneyTask
 
 	taskRuntimes map[string]*TaskRuntime
+
+	FileHeaders map[string]*multipart.FileHeader
 
 	discordCommands map[string]*discordgo.ApplicationCommand
 
 	rwLock sync.RWMutex
 
 	randGenerator *rand.Rand
-}
-
-// imagine a image (create a task)
-func (m *MidJourneyService) Imagine(prompt, params string, fastMode, autoUpscale bool) (taskId string, taskResultChannel chan *ImageGenerationResult, err error) {
-	m.rwLock.Lock()
-	defer m.rwLock.Unlock()
-	if len(m.taskRuntimes) > m.config.MaxUnfinishedTasks {
-		err = ErrTooManyTasks
-		return
-	}
-	seed := strconv.Itoa(m.randGenerator.Intn(math.MaxUint32))
-	params += " --seed " + seed
-	// remove extra spaces
-	prompt = strings.Join(strings.Fields(strings.Trim(strings.Trim(prompt, " ")+" "+params, " ")), " ")
-	// midjourney will replace — to --, so we need to replace it before hash sum
-	prompt = strings.ReplaceAll(prompt, "—", "--")
-	// use hash for taskId
-	taskId = getHashFromPrompt(prompt, seed)
-	logger.Infof("task %s is starting, prompt: %s", taskId, prompt)
-	taskResultChannel = make(chan *ImageGenerationResult, m.config.MaxUnfinishedTasks)
-	m.taskRuntimes[taskId] = &TaskRuntime{
-		TaskId:                taskId,
-		ResultChannel:         taskResultChannel,
-		UpscaleResultChannels: make(map[string]chan *ImageUpscaleResult),
-		UpscaledImageURLs:     make([]string, 0),
-		AutoUpscale:           autoUpscale,
-		CreatedAt:             time.Now().Unix(),
-		UpdatedAt:             time.Now().Unix(),
-		State:                 TaskStateCreated,
-	}
-	// send task
-	m.taskChan <- &imageGenerationTask{
-		taskId:      taskId,
-		prompt:      prompt,
-		fastMode:    fastMode,
-		autoUpscale: autoUpscale,
-	}
-	return
-}
-
-// Upscale a image with given taskId and index
-func (m *MidJourneyService) Upscale(taskId, index string) (upscaleResultChannel chan *ImageUpscaleResult, err error) {
-	// find the task runtime, and get the result channel
-	m.rwLock.Lock()
-	defer m.rwLock.Unlock()
-	taskRuntime, exist := m.taskRuntimes[taskId]
-	if !exist {
-		err = ErrTaskNotFound
-		return
-	}
-	taskRuntime.State = TaskStateManualUpscaling
-	upscaleResultChannel = make(chan *ImageUpscaleResult)
-	taskRuntime.UpscaleResultChannels[index] = upscaleResultChannel
-	if code := m.upscaleRequest(taskRuntime.OriginImageId, index, taskRuntime.OriginImageMessageId); code >= 400 {
-		err = ErrFailedToCreateTask
-		return
-	}
-	return
-}
-
-// remove task when timeout, no mutex lock
-func (m *MidJourneyService) RemoveTaskRuntime(taskId string) {
-	if r, exist := m.taskRuntimes[taskId]; exist {
-		close(r.ResultChannel)
-		delete(m.taskRuntimes, taskId)
-	}
-}
-
-func (m *MidJourneyService) getTaskRuntimeByOriginMessageId(messageId string) *TaskRuntime {
-	for _, taskRuntime := range m.taskRuntimes {
-		if taskRuntime.OriginImageMessageId == messageId {
-			return taskRuntime
-		}
-	}
-	return nil
 }
 
 func (m *MidJourneyService) Start(c MidJourneyServiceConfig) {
@@ -159,47 +92,101 @@ func (m *MidJourneyService) Start(c MidJourneyServiceConfig) {
 
 	m.discordSession.AddHandler(m.onDiscordMessageCreate)
 	m.discordSession.AddHandler(m.onDiscordMessageUpdate)
+	m.discordSession.AddHandler(m.onDiscordInteractionCreate)
 	m.discordSession.Identify.Intents = discordgo.IntentsAll
 	err = m.discordSession.Open()
 	if err != nil {
 		logger.SugaredZapLogger.Panic(err)
 	}
 
-	// reveive task and imagine
+	// reveive task and send interaction request
 	for {
 		task := <-m.taskChan
-		// to avoid discord 429
-		time.Sleep(2 * time.Second)
-		// send discord command(/imagine) request to imagine a image
-		if task.fastMode {
-			if status := m.switchMode(true); status >= 400 {
-				logger.Warnf("switch mode to fast failed, status code: %d", status)
+		time.Sleep(2 * time.Second) // to avoid discord 429
+		switch task.TaskType {
+		case MidjourneyTaskTypeImageGeneration:
+			logger.Infof("receive image generation task: %s", task.TaskId)
+			var taskPayload ImageGenerationTaskPayload
+			if err := json.Unmarshal(task.Payload, &taskPayload); err != nil {
+				logger.Errorf("failed to unmarshal image generation payload, err: %s", err)
+				continue
+			}
+			// XXX 这里同样会导致 interaction created
+			if taskPayload.FastMode {
+				if status := m.switchMode(true); status >= 400 {
+					logger.Warnf("switch mode to fast failed, status code: %d", status)
+				}
+				time.Sleep(time.Duration((m.randGenerator.Intn(1000))+1000) * time.Millisecond)
+			}
+			statusCode := m.imagineRequest(task.TaskId, taskPayload.Prompt)
+			if statusCode >= 400 {
+				logger.Warnf("task %s failed, status code: %d", task.TaskId, statusCode)
+				m.rwLock.Lock()
+				if taskRuntime, exist := m.taskRuntimes[task.TaskId]; exist {
+					taskRuntime.ImagineResultChannel <- &ImageGenerationResult{
+						TaskId:     task.TaskId,
+						Successful: false,
+						Message:    fmt.Sprintf("imagine task: %s failed, code: %d", task.TaskId, statusCode),
+						ImageURLs:  []string{},
+					}
+					m.RemoveTaskRuntime(task.TaskId)
+				}
+				m.rwLock.Unlock()
 			}
 			time.Sleep(time.Duration((m.randGenerator.Intn(1000))+1000) * time.Millisecond)
-		}
-		statusCode := m.imagineRequest(task.taskId, task.prompt)
-		if statusCode >= 400 {
-			logger.Warnf("task %s failed, status code: %d", task.taskId, statusCode)
-			m.rwLock.Lock()
-			if taskRuntime, exist := m.taskRuntimes[task.taskId]; exist {
-				taskRuntime.ResultChannel <- &ImageGenerationResult{
-					TaskId:     task.taskId,
-					Successful: false,
-					Message:    fmt.Sprintf("imagine task: %s failed, code: %d", task.taskId, statusCode),
-					ImageURLs:  []string{},
+			// switch back to slow mode
+			if taskPayload.FastMode {
+				if status := m.switchMode(false); status >= 400 {
+					logger.Warnf("switch mode back to slow failed, status code: %d", status)
 				}
-				m.RemoveTaskRuntime(task.taskId)
 			}
-			m.rwLock.Unlock()
+		case MidjourneyTaskTypeImageUpscale:
+			logger.Infof("receive image upscale task: %s", task.TaskId)
+			var taskPayload ImageUpscaleTaskPayload
+			if err := json.Unmarshal(task.Payload, &taskPayload); err != nil {
+				logger.Errorf("failed to unmarshal image upscale payload, err: %s", err)
+				continue
+			}
+			if code := m.upscaleRequest(taskPayload.OriginImageId, taskPayload.Index, taskPayload.OriginImageMessageId); code >= 400 {
+				logger.Errorf("task %s failed, status code: %d", task.TaskId, code)
+				continue
+			}
+		case MidjourneyTaskTypeImageDescribe:
+			logger.Infof("receive image describe task: %s", task.TaskId)
+			var taskPayload ImageDescribeTaskPayload
+			if err := json.Unmarshal(task.Payload, &taskPayload); err != nil {
+				logger.Errorf("failed to unmarshal image describe payload, err: %s", err)
+				continue
+			}
+			fileHeader, exist := m.FileHeaders[task.TaskId]
+			if !exist {
+				logger.Errorf("failed to get image file header, task id: %s", task.TaskId)
+				continue
+			}
+			fileReader, err := fileHeader.Open()
+			if err != nil {
+				logger.Errorf("failed to open image file header, err: %s", err)
+				delete(m.FileHeaders, task.TaskId)
+				continue
+			}
+
+			if code := m.describeRequest(taskPayload.ImageFileName, taskPayload.ImageFileSize, fileReader); code >= 400 {
+				logger.Errorf("task %s failed, status code: %d", task.TaskId, code)
+				if taskRuntime, exist := m.taskRuntimes[task.TaskId]; exist {
+					taskRuntime.DescribeResultChannel <- &DescribeResult{
+						TaskId:     task.TaskId,
+						Successful: false,
+						Message:    fmt.Sprintf("imagine task: %s failed, code: %d", task.TaskId, code),
+					}
+				}
+				continue
+			}
+			fileReader.Close()
+			delete(m.FileHeaders, task.TaskId)
+		default:
+			logger.Warnf("unknown task type: %s", task.TaskType)
 		}
 		time.Sleep(time.Duration((m.randGenerator.Intn(1000))+1000) * time.Millisecond)
-		// switch back to slow mode
-		if task.fastMode {
-			if status := m.switchMode(false); status >= 400 {
-				logger.Warnf("switch mode back to slow failed, status code: %d", status)
-			}
-			time.Sleep(time.Duration((m.randGenerator.Intn(1000))+1000) * time.Millisecond)
-		}
 	}
 }
 
@@ -212,7 +199,7 @@ func (m *MidJourneyService) onDiscordMessageUpdate(s *discordgo.Session, event *
 			defer m.rwLock.Unlock()
 			if taskRuntime, exist := m.taskRuntimes[taskId]; exist {
 				logger.Infof("task %s failed, reason: %s descripiton: %s", taskId, embed.Title, embed.Description)
-				taskRuntime.ResultChannel <- &ImageGenerationResult{
+				taskRuntime.ImagineResultChannel <- &ImageGenerationResult{
 					TaskId:     taskId,
 					Successful: false,
 					Message:    embed.Title + " " + embed.Description,
@@ -220,8 +207,39 @@ func (m *MidJourneyService) onDiscordMessageUpdate(s *discordgo.Session, event *
 				}
 				m.RemoveTaskRuntime(taskId)
 			}
+		} else if event.Interaction != nil {
+			switch event.Interaction.Name {
+			case "describe":
+				taskRuntime := m.getTaskRuntimeByInteractionId(event.Interaction.ID)
+				if taskRuntime == nil {
+					continue
+				}
+				taskRuntime.DescribeResultChannel <- &DescribeResult{
+					TaskId:      taskRuntime.TaskId,
+					Successful:  true,
+					Message:     "success",
+					Description: embed.Description,
+				}
+			}
 		}
 	}
+}
+
+// when a discord interaction created (for example, when a user click a button or use a slash command)
+// 当前面临的最大问题是, discord 的 interaction api request 时，我们无法拿到创建的 interaction 的 id， 因此无法轻易将后续的interaction响应与http请求对应起来
+// 因此我们考虑，所有的 request 发出后，都等待 interaction create 事件，并将 interaction id 与 task id 关联起来
+// 于是在发出 request 之后，任务队列处要阻塞，等待 interaction create 事件(但是又并非所有的 interaction create 事件都是我们想要的)
+// 因此，所有的 interaction request 都需要走 taskChan 来分发，保证没有同时进行的 interaction request
+func (m *MidJourneyService) onDiscordInteractionCreate(s *discordgo.Session, event discordgo.InteractionCreate) {
+	// record current taskId and interactionId
+	// d, _ := json.Marshal(event)
+	// logger.Debugf("receive interaction create event: %s", string(d))
+	// m.rwLock.Lock()
+	// defer m.rwLock.Unlock()
+	// if taskRuntime, exist := m.taskRuntimes[m.activeTaskId]; exist {
+	// 	taskRuntime.InteractionId = event.Interaction.ID
+	// 	logger.Infof("%s create interaction: %s", m.activeTaskId, event.Interaction.ID)
+	// }
 }
 
 // when receive message from discord(image generated, upscaled, etc.)
@@ -241,7 +259,7 @@ func (m *MidJourneyService) onDiscordMessageCreate(s *discordgo.Session, event *
 				defer m.rwLock.Unlock()
 				if taskRuntime, exist := m.taskRuntimes[taskId]; exist {
 					logger.Infof("task %s failed, reason: %s descripiton: %s", taskId, embed.Title, embed.Description)
-					taskRuntime.ResultChannel <- &ImageGenerationResult{
+					taskRuntime.ImagineResultChannel <- &ImageGenerationResult{
 						TaskId:     taskId,
 						Successful: false,
 						Message:    embed.Title + " " + embed.Description,
@@ -275,7 +293,7 @@ func (m *MidJourneyService) onDiscordMessageCreate(s *discordgo.Session, event *
 				taskRuntime.OriginImageId = getFileIdFromURL(attachment.URL)
 				if !taskRuntime.AutoUpscale {
 					// only return origin image url, user can upscale it manually
-					taskRuntime.ResultChannel <- &ImageGenerationResult{
+					taskRuntime.ImagineResultChannel <- &ImageGenerationResult{
 						TaskId:         taskId,
 						Successful:     true,
 						OriginImageURL: attachment.URL,
@@ -283,8 +301,7 @@ func (m *MidJourneyService) onDiscordMessageCreate(s *discordgo.Session, event *
 					}
 					return
 				}
-
-				// send upscale request
+				// auto upscale
 				taskRuntime.State = TaskStateAutoUpscaling
 				for i := 1; i <= m.config.UpscaleCount; i++ {
 					if code := m.upscaleRequest(taskRuntime.OriginImageId, strconv.Itoa(i), event.ID); code >= 400 {
@@ -313,7 +330,7 @@ func (m *MidJourneyService) onDiscordMessageCreate(s *discordgo.Session, event *
 				taskRuntime.UpscaleProcessCount += 1
 				if taskRuntime.UpscaleProcessCount == m.config.UpscaleCount {
 					logger.Infof("task %s image generation finished, current goroutine count: %d", taskRuntime.TaskId, runtime.NumGoroutine())
-					taskRuntime.ResultChannel <- &ImageGenerationResult{
+					taskRuntime.ImagineResultChannel <- &ImageGenerationResult{
 						TaskId:         taskRuntime.TaskId,
 						Successful:     true,
 						ImageURLs:      taskRuntime.UpscaledImageURLs,

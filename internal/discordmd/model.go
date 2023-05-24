@@ -1,6 +1,10 @@
 package discordmd
 
-import "github.com/bwmarrin/discordgo"
+import (
+	"encoding/json"
+
+	"github.com/bwmarrin/discordgo"
+)
 
 type MidJourneyServiceConfig struct {
 	DiscordToken string `mapstructure:"discordToken"`
@@ -10,6 +14,8 @@ type MidJourneyServiceConfig struct {
 	DiscordChannelId string `mapstructure:"discordChannelId"` // midjourney channel id
 
 	DiscordSessionId string `mapstructure:"discordSessionId"` // midjourney session id
+
+	DiscordGuildId string `mapstructure:"discordGuildId"` // midjourney guild id
 
 	UpscaleCount int `mapstructure:"upscaleCount"`
 
@@ -24,6 +30,8 @@ type InteractionRequest struct {
 	Type          int                    `json:"type"`
 	ApplicationID string                 `json:"application_id"`
 	ChannelID     string                 `json:"channel_id"`
+	GuildID       string                 `json:"guild_id"`
+	Token         string                 `json:"token"`
 	SessionID     string                 `json:"session_id"`
 	Data          InteractionRequestData `json:"data"`
 	Nonce         string                 `json:"nonce"`
@@ -37,6 +45,7 @@ type UpSampleData struct {
 type InteractionRequestTypeThree struct {
 	Type          int         `json:"type"`
 	ChannelID     string      `json:"channel_id"`
+	GuildID       string      `json:"guild_id"`
 	MessageFlags  int         `json:"message_flags"`
 	MessageID     string      `json:"message_id"`
 	ApplicationID string      `json:"application_id"`
@@ -66,14 +75,37 @@ type InteractionRequestApplicationCommand struct {
 	DmPermission             bool        `json:"dm_permission"`
 }
 
-type imageGenerationTask struct {
-	taskId string
+type MidjourneyTaskType string
 
-	prompt string
+const (
+	MidjourneyTaskTypeImageGeneration MidjourneyTaskType = "image_generation"
+	MidjourneyTaskTypeImageUpscale    MidjourneyTaskType = "image_upscale"
+	MidjourneyTaskTypeImageDescribe   MidjourneyTaskType = "image_describe"
+)
 
-	fastMode bool
+type MidjourneyTask struct {
+	TaskId   string
+	TaskType MidjourneyTaskType
+	Payload  json.RawMessage
+}
 
-	autoUpscale bool
+type ImageGenerationTaskPayload struct {
+	Prompt string
+
+	FastMode bool
+
+	AutoUpscale bool
+}
+
+type ImageUpscaleTaskPayload struct {
+	OriginImageId        string
+	Index                string
+	OriginImageMessageId string
+}
+
+type ImageDescribeTaskPayload struct {
+	ImageFileName string
+	ImageFileSize int
 }
 
 type ImageGenerationResult struct {
@@ -100,6 +132,42 @@ type ImageUpscaleResult struct {
 	ImageURL string `json:"image_url"`
 }
 
+type DescribeResult struct {
+	TaskId string `json:"task_id"`
+
+	Successful bool `json:"successful"`
+
+	Message string `json:"message"`
+
+	Description string `json:"description"`
+}
+
+type AttachmentRequest struct {
+	Files []AttachmentFile `json:"files"`
+}
+
+type AttachmentFile struct {
+	FileName string `json:"filename"`
+	FileSize int    `json:"file_size"`
+	Id       string `json:"id"`
+}
+
+type AttachmentResponse struct {
+	Attachments []AttachmentInResponse `json:"attachments"`
+}
+
+type AttachmentInResponse struct {
+	Id             int    `json:"id"`
+	UploadURL      string `json:"upload_url"`
+	UploadFilename string `json:"upload_filename"`
+}
+
+type AttachmentInCommand struct {
+	Id               string `json:"id"`
+	Filename         string `json:"filename"`
+	UploadedFilename string `json:"uploaded_filename"`
+}
+
 type TaskState string
 
 const (
@@ -108,29 +176,3 @@ const (
 	TaskStateAutoUpscaling   TaskState = "auto_upscaling"
 	TaskStateManualUpscaling TaskState = "manual_upscaling"
 )
-
-type TaskRuntime struct {
-	TaskId string
-
-	ResultChannel chan *ImageGenerationResult
-
-	UpscaleResultChannels map[string]chan *ImageUpscaleResult
-
-	OriginImageURL string
-
-	OriginImageId string
-
-	OriginImageMessageId string
-
-	UpscaledImageURLs []string
-
-	UpscaleProcessCount int
-
-	AutoUpscale bool
-
-	CreatedAt int64
-
-	UpdatedAt int64
-
-	State TaskState
-}
