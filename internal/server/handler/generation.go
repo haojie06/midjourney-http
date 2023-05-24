@@ -55,7 +55,7 @@ func GenerationImageFromGetRequest(c *gin.Context) {
 	prompt := c.Query("prompt")
 	params := c.Query("params")
 	fastMode := c.Query("fast") == "true"
-	autoScale := c.Query("auto_scale") == "true"
+	autoScale := c.Query("auto_upscale") == "auto_upscale"
 	taskId, taskResultChan, err := discordmd.MidJourneyServiceApp.Imagine(prompt, params, fastMode, autoScale)
 	if err != nil {
 		logger.Errorf("task %s failed: %s", taskId, err.Error())
