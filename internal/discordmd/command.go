@@ -35,6 +35,7 @@ func (m *MidJourneyService) switchMode(fast bool) (status int) {
 		ApplicationID: commnad.ApplicationID,
 		ChannelID:     m.config.DiscordChannelId,
 		SessionID:     m.config.DiscordSessionId,
+		GuildID:       m.config.DiscordGuildId,
 		Data: InteractionRequestData{
 			Version:            commnad.Version,
 			ID:                 commnad.ID,
@@ -72,6 +73,7 @@ func (m *MidJourneyService) imagineRequest(taskId string, prompt string) (status
 		ApplicationID: imagineCommand.ApplicationID,
 		ChannelID:     m.config.DiscordChannelId,
 		SessionID:     m.config.DiscordSessionId,
+		GuildID:       m.config.DiscordGuildId,
 		Data: InteractionRequestData{
 			Version:            imagineCommand.Version,
 			ID:                 imagineCommand.ID,
@@ -92,6 +94,7 @@ func (m *MidJourneyService) upscaleRequest(id, index, messageId string) int {
 		MessageID:     messageId,
 		ApplicationID: m.config.DiscordAppId,
 		ChannelID:     m.config.DiscordChannelId,
+		GuildID:       m.config.DiscordGuildId,
 		SessionID:     m.config.DiscordSessionId,
 		Data: UpSampleData{
 			ComponentType: 2,
@@ -152,7 +155,7 @@ func (m *MidJourneyService) describeRequest(filename string, size int, file io.R
 		return 500
 	}
 	defer resp.Body.Close()
-	logger.Infof("success to put file response: %s\n%+v", resp.Status, attachment)
+
 	var dataOptions []*discordgo.ApplicationCommandInteractionDataOption
 	dataOptions = append(dataOptions, &discordgo.ApplicationCommandInteractionDataOption{
 		Type:  11,
@@ -164,6 +167,7 @@ func (m *MidJourneyService) describeRequest(filename string, size int, file io.R
 		Type:          2,
 		ApplicationID: describeCommand.ApplicationID,
 		ChannelID:     m.config.DiscordChannelId,
+		GuildID:       m.config.DiscordGuildId,
 		SessionID:     m.config.DiscordSessionId,
 		Data: InteractionRequestData{
 			Version:            describeCommand.Version,

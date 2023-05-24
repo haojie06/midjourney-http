@@ -8,6 +8,7 @@ require (
 	github.com/gin-contrib/pprof v1.4.0
 	github.com/gin-contrib/zap v0.1.0
 	github.com/gin-gonic/gin v1.9.0
+	github.com/google/uuid v1.1.2
 	github.com/spf13/viper v1.15.0
 	go.uber.org/zap v1.24.0
 )
