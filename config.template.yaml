@@ -6,6 +6,7 @@ midJourney:
   discordToken:
   discordAppId: 
   discordChannelId: 
+  discordGuildId: # invite the bot to your server and copy the guild id
   discordSessionId: 
   upscaleCount: 0
   maxUnfinishedTasks: 10

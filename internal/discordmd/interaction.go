@@ -1,9 +1,9 @@
 package discordmd
 
 import (
-	"fmt"
-	"io"
+	"encoding/json"
 	"math"
+	"mime/multipart"
 	"strconv"
 	"strings"
 	"time"
@@ -12,7 +12,7 @@ import (
 )
 
 // imagine a image (create a task)
-func (m *MidJourneyService) Imagine(prompt, params string, fastMode, autoUpscale bool) (taskId string, taskResultChannel chan *ImageGenerationResult, err error) {
+func (m *MidJourneyService) Imagine(prompt, params string, fastMode, autoUpscale bool) (taskId string, imagineResultChannel chan *ImageGenerationResult, err error) {
 	m.rwLock.Lock()
 	defer m.rwLock.Unlock()
 	if len(m.taskRuntimes) > m.config.MaxUnfinishedTasks {
@@ -28,23 +28,28 @@ func (m *MidJourneyService) Imagine(prompt, params string, fastMode, autoUpscale
 	// use hash for taskId
 	taskId = getHashFromPrompt(prompt, seed)
 	logger.Infof("task %s is starting, prompt: %s", taskId, prompt)
-	taskResultChannel = make(chan *ImageGenerationResult, m.config.MaxUnfinishedTasks)
+	imagineResultChannel = make(chan *ImageGenerationResult, m.config.MaxUnfinishedTasks)
 	m.taskRuntimes[taskId] = &TaskRuntime{
 		TaskId:                taskId,
-		ResultChannel:         taskResultChannel,
+		ImagineResultChannel:  imagineResultChannel,
 		UpscaleResultChannels: make(map[string]chan *ImageUpscaleResult),
+		DescribeResultChannel: make(chan *DescribeResult),
 		UpscaledImageURLs:     make([]string, 0),
 		AutoUpscale:           autoUpscale,
 		CreatedAt:             time.Now().Unix(),
 		UpdatedAt:             time.Now().Unix(),
 		State:                 TaskStateCreated,
 	}
+	payload, _ := json.Marshal(ImageGenerationTaskPayload{
+		Prompt:      prompt,
+		FastMode:    fastMode,
+		AutoUpscale: autoUpscale,
+	})
 	// send task
-	m.taskChan <- &imageGenerationTask{
-		taskId:      taskId,
-		prompt:      prompt,
-		fastMode:    fastMode,
-		autoUpscale: autoUpscale,
+	m.taskChan <- &MidjourneyTask{
+		TaskId:   taskId,
+		TaskType: MidjourneyTaskTypeImageGeneration,
+		Payload:  payload,
 	}
 	return
 }
@@ -62,18 +67,34 @@ func (m *MidJourneyService) Upscale(taskId, index string) (upscaleResultChannel 
 	taskRuntime.State = TaskStateManualUpscaling
 	upscaleResultChannel = make(chan *ImageUpscaleResult)
 	taskRuntime.UpscaleResultChannels[index] = upscaleResultChannel
-	if code := m.upscaleRequest(taskRuntime.OriginImageId, index, taskRuntime.OriginImageMessageId); code >= 400 {
-		err = ErrFailedToCreateTask
-		return
+	payload, _ := json.Marshal(ImageUpscaleTaskPayload{
+		OriginImageId:        taskRuntime.OriginImageId,
+		Index:                index,
+		OriginImageMessageId: taskRuntime.OriginImageMessageId,
+	})
+	m.taskChan <- &MidjourneyTask{
+		TaskId:   taskId,
+		TaskType: MidjourneyTaskTypeImageUpscale,
+		Payload:  payload,
 	}
 	return
 }
 
-func (m *MidJourneyService) Describe(r io.Reader, filename string, size int) (description string, err error) {
-	status := m.describeRequest(filename, size, r)
-	if status >= 400 {
-		description = fmt.Sprintf("Failed to describe image, status code: %d", status)
-		err = ErrFailedToDescribeImage
+func (m *MidJourneyService) Describe(taskId string, file *multipart.FileHeader, filename string, size int) (describeResultChannel chan *DescribeResult, err error) {
+	m.rwLock.Lock()
+	defer m.rwLock.Unlock()
+
+	taskRuntime := NewTaskRuntime(taskId, false)
+	describeResultChannel = taskRuntime.DescribeResultChannel
+	m.taskRuntimes[taskId] = taskRuntime
+	payload, _ := json.Marshal(ImageDescribeTaskPayload{
+		ImageFileName: filename,
+		ImageFileSize: size,
+	})
+	m.taskChan <- &MidjourneyTask{
+		TaskId:   taskId,
+		TaskType: MidjourneyTaskTypeImageDescribe,
+		Payload:  payload,
 	}
 	return
 }
