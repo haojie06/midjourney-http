@@ -129,3 +129,15 @@ func (bot *DiscordBot) getTaskRuntimeByInteractionId(interactionId string) *Task
 	}
 	return nil
 }
+
+func (bot *DiscordBot) getTaskRuntimeByTaskKeywordHash(taskKeywordHash string) *TaskRuntime {
+	if taskKeywordHash == "" {
+		return nil
+	}
+	for _, taskRuntime := range bot.taskRuntimes {
+		if taskRuntime.TaskKeywordHash == taskKeywordHash {
+			return taskRuntime
+		}
+	}
+	return nil
+}

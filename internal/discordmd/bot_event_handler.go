@@ -63,38 +63,38 @@ func (bot *DiscordBot) onDiscordMessageWithAttachmentsCreate(s *discordgo.Sessio
 		if event.ReferencedMessage == nil {
 			// 原始图片没有referenced message
 			// receive origin image, send upscale request depends on config
-			taskId, promptStr := getHashFromMessage(event.Content)
-			logger.Infof("bot: %s task %s receive origin image: %s", bot.UniqueId, taskId, attachment.URL)
-			taskRuntime, exist := bot.taskRuntimes[taskId]
-			if taskId != "" && exist && taskRuntime != nil {
-				// we will use messageId to map upscaled image to origin image
-				taskRuntime.OriginImageMessageId = event.ID
-				taskRuntime.OriginImageURL = attachment.URL
-				taskRuntime.OriginImageId = getFileIdFromURL(attachment.URL)
-				if !taskRuntime.AutoUpscale {
-					// only return origin image url, user can upscale it manually
-					taskRuntime.taskResultChan <- TaskResult{
-						TaskId:     taskId,
-						Successful: true,
-						Payload: ImageGenerationResultPayload{
-							OriginImageURL: attachment.URL,
-							ImageURLs:      []string{},
-						},
-					}
-					return
+			taskKeywordHash, promptStr := getHashFromMessage(event.Content)
+			taskRuntime := bot.getTaskRuntimeByTaskKeywordHash(taskKeywordHash)
+			if taskRuntime == nil {
+				logger.Warnf("bot: %s keywordHash %s is not created by this bot, prompt: %s", bot.UniqueId, taskKeywordHash, promptStr)
+				return
+			}
+			logger.Infof("bot: %s task: %s receive origin image: %s", bot.UniqueId, taskRuntime.TaskId, attachment.URL)
+			// we will use messageId to map upscaled image to origin image
+			taskRuntime.OriginImageMessageId = event.ID
+			taskRuntime.OriginImageURL = attachment.URL
+			taskRuntime.OriginImageId = getFileIdFromURL(attachment.URL)
+			if !taskRuntime.AutoUpscale {
+				// only return origin image url, user can upscale it manually
+				taskRuntime.taskResultChan <- TaskResult{
+					TaskId:     taskRuntime.TaskId,
+					Successful: true,
+					Payload: ImageGenerationResultPayload{
+						OriginImageURL: attachment.URL,
+						ImageURLs:      []string{},
+					},
 				}
-				// auto upscale enable
-				taskRuntime.State = TaskStateAutoUpscaling
-				for i := 1; i <= bot.config.UpscaleCount; i++ {
-					if code := bot.upscale(taskRuntime.OriginImageId, strconv.Itoa(i), event.ID); code >= 400 {
-						logger.Errorf("failed to upscale image, code: %d", code)
-						taskRuntime.UpscaleProcessCount += 1
-					} else {
-						logger.Infof("task %s request to upscale image %s %d", taskId, taskRuntime.OriginImageId, i)
-					}
+				return
+			}
+			// auto upscale enable
+			taskRuntime.State = TaskStateAutoUpscaling
+			for i := 1; i <= bot.config.UpscaleCount; i++ {
+				if code := bot.upscale(taskRuntime.OriginImageId, strconv.Itoa(i), event.ID); code >= 400 {
+					logger.Errorf("failed to upscale image, code: %d", code)
+					taskRuntime.UpscaleProcessCount += 1
+				} else {
+					logger.Infof("task %s request to upscale image %s %d", taskRuntime.TaskId, taskRuntime.OriginImageId, i)
 				}
-			} else {
-				logger.Warnf("bot: %s task %s is not created by this bot, prompt: %s", bot.UniqueId, taskId, promptStr)
 			}
 		} else {
 			// upscaled 的图片有referenced message
@@ -149,18 +149,21 @@ func (bot *DiscordBot) onDiscordMessageUpdate(s *discordgo.Session, event *disco
 	for _, embed := range event.Message.Embeds {
 		if _, failed := FailedEmbededMessageTitlesInUpdate[embed.Title]; failed {
 			// 大部分失败提示都是 embeded message
-			taskId, _ := getHashFromMessage(event.Message.Content)
+			taskKeywordHash, _ := getHashFromMessage(event.Message.Content)
 			bot.runtimesLock.Lock()
 			defer bot.runtimesLock.Unlock()
-			if taskRuntime, exist := bot.taskRuntimes[taskId]; exist {
-				logger.Infof("task %s failed, reason: %s descripiton: %s", taskId, embed.Title, embed.Description)
-				taskRuntime.taskResultChan <- TaskResult{
-					TaskId:     taskId,
-					Successful: false,
-					Message:    embed.Title + " " + embed.Description,
-				}
-				bot.RemoveTaskRuntime(taskId)
+			taskRuntime := bot.getTaskRuntimeByTaskKeywordHash(taskKeywordHash)
+			if taskRuntime == nil {
+				logger.Warnf("bot: %s keywordHash %s is not created by this bot", bot.UniqueId, taskKeywordHash)
+				return
 			}
+			logger.Infof("task %s failed, reason: %s descripiton: %s", taskRuntime.TaskId, embed.Title, embed.Description)
+			taskRuntime.taskResultChan <- TaskResult{
+				TaskId:     taskRuntime.TaskId,
+				Successful: false,
+				Message:    embed.Title + " " + embed.Description,
+			}
+			bot.RemoveTaskRuntime(taskRuntime.TaskId)
 		} else if event.Interaction != nil {
 			// 部分 interaction 的结果来源于 message update
 			switch event.Interaction.Name {

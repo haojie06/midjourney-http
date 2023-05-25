@@ -4,7 +4,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"github.com/haojie06/midjourney-http/internal/discordmd"
 )
 
@@ -15,8 +14,7 @@ func CreateDescribeTask(c *gin.Context) {
 		return
 	}
 
-	taskId := uuid.New().String()
-	resultChan, err := discordmd.MidJourneyServiceApp.Describe(taskId, file, file.Filename, int(file.Size))
+	_, resultChan, err := discordmd.MidJourneyServiceApp.Describe(file, file.Filename, int(file.Size))
 	if err != nil {
 		c.JSON(400, gin.H{"message": err.Error()})
 		return

@@ -8,11 +8,15 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // imagine a image (create a task)
 func (m *MidJourneyService) Imagine(prompt, params string, fastMode, autoUpscale bool) (taskId string, taskResultChan chan TaskResult, err error) {
 	// allocate taskId from prompt
+	taskId = uuid.New().String()
+
 	seed := strconv.Itoa(m.randGenerator.Intn(math.MaxUint32))
 	params += " --seed " + seed
 	// remove extra spaces
@@ -20,7 +24,7 @@ func (m *MidJourneyService) Imagine(prompt, params string, fastMode, autoUpscale
 	// midjourney will replace — to --, so we need to replace it before hash sum
 	prompt = strings.ReplaceAll(prompt, "—", "--")
 	// use hash for taskId
-	taskId = getHashFromPrompt(prompt, seed)
+	taskKeywordHash := getHashFromPrompt(prompt, seed)
 
 	bot, err := m.GetBot(taskId)
 	if err != nil {
@@ -29,15 +33,11 @@ func (m *MidJourneyService) Imagine(prompt, params string, fastMode, autoUpscale
 
 	bot.runtimesLock.Lock()
 	defer bot.runtimesLock.Unlock()
-	// if len(bot.taskRuntimes) > bot.config.MaxUnfinishedTasks {
-	// 	err = ErrTooManyTasks
-	// 	return
-	// }
 
 	taskResultChan = make(chan TaskResult, 1)
 	bot.taskRuntimes[taskId] = &TaskRuntime{
-		TaskId: taskId,
-		// ImagineResultChannel:  resultNotifyChan,
+		TaskId:                taskId,
+		TaskKeywordHash:       taskKeywordHash, // 部分交互的回复，不引用interaction, 因此需要通过关键词来关联
 		UpscaleResultChannels: make(map[string]chan *ImageUpscaleResultPayload),
 		UpscaledImageURLs:     make([]string, 0),
 		taskResultChan:        taskResultChan,
@@ -46,6 +46,7 @@ func (m *MidJourneyService) Imagine(prompt, params string, fastMode, autoUpscale
 		UpdatedAt:             time.Now().Unix(),
 		State:                 TaskStateCreated,
 	}
+	// TODO 改为不需要marshal
 	payload, _ := json.Marshal(ImageGenerationTaskPayload{
 		Prompt:      prompt,
 		FastMode:    fastMode,
@@ -61,6 +62,7 @@ func (m *MidJourneyService) Imagine(prompt, params string, fastMode, autoUpscale
 }
 
 // Upscale a image with given taskId and index
+// upscale 基于已有的 图片生成任务进行，所以需要传入 taskId 和 index
 func (m *MidJourneyService) Upscale(taskId, index string) (taskResultChan chan TaskResult, err error) {
 	bot, err := m.GetBot(taskId)
 	if err != nil {
@@ -90,7 +92,8 @@ func (m *MidJourneyService) Upscale(taskId, index string) (taskResultChan chan T
 	return
 }
 
-func (m *MidJourneyService) Describe(taskId string, file *multipart.FileHeader, filename string, size int) (taskResultChan chan TaskResult, err error) {
+func (m *MidJourneyService) Describe(file *multipart.FileHeader, filename string, size int) (taskId string, taskResultChan chan TaskResult, err error) {
+	taskId = uuid.New().String()
 	bot, err := m.GetBot(taskId)
 	if err != nil {
 		return
