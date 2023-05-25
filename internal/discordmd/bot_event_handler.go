@@ -55,7 +55,7 @@ func (bot *DiscordBot) onDiscordMessageCreate(s *discordgo.Session, event *disco
 		if event.ReferencedMessage == nil {
 			// receive origin image, send upscale request depends on config
 			taskId, promptStr := getHashFromMessage(event.Content)
-			logger.Infof("task %s receive origin image: %s", taskId, attachment.URL)
+			logger.Infof("bot: %s task %s receive origin image: %s", bot.UniqueId, taskId, attachment.URL)
 			taskRuntime, exist := bot.taskRuntimes[taskId]
 			if taskId != "" && exist && taskRuntime != nil {
 				// we will use messageId to map upscaled image to origin image
@@ -84,7 +84,7 @@ func (bot *DiscordBot) onDiscordMessageCreate(s *discordgo.Session, event *disco
 					time.Sleep(time.Duration((bot.randGenerator.Intn(3000))+1000) * time.Millisecond)
 				}
 			} else {
-				logger.Warnf("task %s is not created by this bot, prompt: %s", taskId, promptStr)
+				logger.Warnf("bot: %s task %s is not created by this bot, prompt: %s", bot.UniqueId, taskId, promptStr)
 			}
 		} else {
 			// receive upscaling image, use referenced message id to map to taskId

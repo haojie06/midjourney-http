@@ -18,7 +18,7 @@ type DiscordBot struct {
 
 	BotId string
 
-	config *DiscordBotConfig
+	config DiscordBotConfig
 
 	discordSession *discordgo.Session
 
@@ -35,7 +35,7 @@ type DiscordBot struct {
 	randGenerator *rand.Rand
 }
 
-func NewDiscordBot(config *DiscordBotConfig) (*DiscordBot, error) {
+func NewDiscordBot(config DiscordBotConfig) (*DiscordBot, error) {
 	logger.Infof("creating discord bot, uniqueId: %s", config.UniqueId)
 	ds, err := discordgo.New(config.DiscordToken)
 	if err != nil {

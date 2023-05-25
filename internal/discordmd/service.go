@@ -51,7 +51,7 @@ type MidJourneyService struct {
 
 func (m *MidJourneyService) Start(botConfigs []DiscordBotConfig) {
 	for _, botConfig := range botConfigs {
-		bot, err := NewDiscordBot(&botConfig)
+		bot, err := NewDiscordBot(botConfig)
 		if err != nil {
 			logger.Errorf("failed to create discord bot, err: %s", err)
 			continue
