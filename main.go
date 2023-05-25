@@ -24,8 +24,8 @@ func main() {
 		panic(err)
 	}
 
-	var midJourneyConfig discordmd.MidJourneyServiceConfig
-	if err := viper.UnmarshalKey("midJourney", &midJourneyConfig); err != nil {
+	var botConfigs []discordmd.DiscordBotConfig
+	if err := viper.UnmarshalKey("discordBots", &botConfigs); err != nil {
 		panic(err)
 	}
 	viper.SetDefault("server.host", "127.0.0.1")
@@ -34,6 +34,6 @@ func main() {
 	port := viper.GetString("server.port")
 	apiKey := viper.GetString("server.apiKey")
 	logger.Infof("service is starting, host: %s, port: %s", host, port)
-	go discordmd.MidJourneyServiceApp.Start(midJourneyConfig)
+	go discordmd.MidJourneyServiceApp.Start(botConfigs)
 	server.Start(host, port, apiKey)
 }

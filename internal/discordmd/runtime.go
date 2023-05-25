@@ -46,31 +46,3 @@ func NewTaskRuntime(taskId string, autoUpscale bool) *TaskRuntime {
 	}
 }
 
-// remove task when timeout, no mutex lock
-func (m *MidJourneyService) RemoveTaskRuntime(taskId string) {
-	if r, exist := m.taskRuntimes[taskId]; exist {
-		close(r.ImagineResultChannel)
-		delete(m.taskRuntimes, taskId)
-	}
-}
-
-func (m *MidJourneyService) getTaskRuntimeByOriginMessageId(messageId string) *TaskRuntime {
-	for _, taskRuntime := range m.taskRuntimes {
-		if taskRuntime.OriginImageMessageId == messageId {
-			return taskRuntime
-		}
-	}
-	return nil
-}
-
-func (m *MidJourneyService) getTaskRuntimeByInteractionId(interactionId string) *TaskRuntime {
-	if interactionId == "" {
-		return nil
-	}
-	for _, taskRuntime := range m.taskRuntimes {
-		if taskRuntime.InteractionId == interactionId {
-			return taskRuntime
-		}
-	}
-	return nil
-}

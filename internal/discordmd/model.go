@@ -6,7 +6,9 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
-type MidJourneyServiceConfig struct {
+type DiscordBotConfig struct {
+	UniqueId string `mapstructure:"uniqueId"`
+
 	DiscordToken string `mapstructure:"discordToken"`
 
 	DiscordAppId string `mapstructure:"discordAppId"` // midjourney application id
@@ -19,7 +21,7 @@ type MidJourneyServiceConfig struct {
 
 	UpscaleCount int `mapstructure:"upscaleCount"`
 
-	MaxUnfinishedTasks int `mapstructure:"maxUnfinishedTasks"`
+	// MaxUnfinishedTasks int `mapstructure:"maxUnfinishedTasks"`
 }
 
 type InteractionRequestWrapper struct {

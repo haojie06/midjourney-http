@@ -2,11 +2,12 @@ server:
   host: 0.0.0.0
   port: 9000
   apiKey: ""
-midJourney:
-  discordToken:
-  discordAppId: 
-  discordChannelId: 
-  discordGuildId: # invite the bot to your server and copy the guild id
-  discordSessionId: 
-  upscaleCount: 0
-  maxUnfinishedTasks: 10
+discordBots:
+  - uniqueId: bot1
+    discordToken: 
+    discordAppId: 
+    discordChannelId: 
+    discordSessionId: 
+    discordGuildId: 
+    upscaleCount:
+    maxUnfinishedTasks:

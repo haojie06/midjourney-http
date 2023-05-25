@@ -16,7 +16,6 @@ func CreateDescribeTask(c *gin.Context) {
 	}
 
 	taskId := uuid.New().String()
-	discordmd.MidJourneyServiceApp.FileHeaders[taskId] = file
 	describeResultChan, err := discordmd.MidJourneyServiceApp.Describe(taskId, file, file.Filename, int(file.Size))
 	if err != nil {
 		c.JSON(400, gin.H{"message": err.Error()})

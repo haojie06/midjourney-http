@@ -35,7 +35,8 @@ func CreateGenerationTask(c *gin.Context) {
 	}
 	select {
 	case <-time.After(60 * time.Minute):
-		discordmd.MidJourneyServiceApp.RemoveTaskRuntime(taskId)
+		// TODO
+		// discordmd.MidJourneyServiceApp.RemoveTaskRuntime(taskId)
 		logger.Infof("task %s timeout", taskId)
 		c.JSON(408, gin.H{"message": "timeout"})
 	case taskResult := <-taskResultChan:
@@ -66,7 +67,6 @@ func GenerationImageFromGetRequest(c *gin.Context) {
 		}
 		return
 	}
-	logger.Infof("task %s created", taskId)
 	select {
 	case <-time.After(60 * time.Minute):
 		logger.Infof("task %s timeout", taskId)
