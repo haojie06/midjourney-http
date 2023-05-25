@@ -16,6 +16,7 @@ func (bot *DiscordBot) ImagineTaskHandler(taskId string, payload json.RawMessage
 	if err = json.Unmarshal(payload, &taskPayload); err != nil {
 		return
 	}
+	logger.Infof("imagine task %s received, fast mode: %t, prompt: %s", taskId, taskPayload.FastMode, taskPayload.Prompt)
 	if taskPayload.FastMode {
 		bot.switchFastMode(true)
 		defer bot.switchFastMode(false)

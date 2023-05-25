@@ -33,6 +33,11 @@ func getHashFromEmbeds(message string) (hashStr string) {
 	if !ok {
 		return ""
 	}
+	// 计算哈希的时候忽略自动添加的参数
+	index := strings.Index(message, seed)
+	if index != -1 {
+		message = message[:index+len(seed)]
+	}
 	message = strings.Trim(message, " ")
 	message = replaceLinks(message, seed)
 	// print("--- get hash from embeds", message, "\n")
@@ -56,6 +61,10 @@ func getHashFromMessage(message string) (hashStr, promptStr string) {
 	seed, ok := getLastSeedFromMessage(message)
 	if !ok {
 		return "", ""
+	}
+	index := strings.Index(promptStr, seed)
+	if index != -1 {
+		promptStr = promptStr[:index+len(seed)]
 	}
 
 	linkRe := regexp.MustCompile(`<https?:\/\/\S+\>`) // link in reply message is different from other links, wrapped with <>
