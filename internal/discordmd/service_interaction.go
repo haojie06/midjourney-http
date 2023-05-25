@@ -29,12 +29,12 @@ func (m *MidJourneyService) Imagine(prompt, params string, fastMode, autoUpscale
 
 	bot.runtimesLock.Lock()
 	defer bot.runtimesLock.Unlock()
-	if len(bot.taskRuntimes) > bot.config.MaxUnfinishedTasks {
-		err = ErrTooManyTasks
-		return
-	}
+	// if len(bot.taskRuntimes) > bot.config.MaxUnfinishedTasks {
+	// 	err = ErrTooManyTasks
+	// 	return
+	// }
 
-	imagineResultChannel = make(chan *ImageGenerationResult, bot.config.MaxUnfinishedTasks)
+	imagineResultChannel = make(chan *ImageGenerationResult)
 	bot.taskRuntimes[taskId] = &TaskRuntime{
 		TaskId:                taskId,
 		ImagineResultChannel:  imagineResultChannel,

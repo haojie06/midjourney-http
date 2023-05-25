@@ -21,7 +21,7 @@ type DiscordBotConfig struct {
 
 	UpscaleCount int `mapstructure:"upscaleCount"`
 
-	MaxUnfinishedTasks int `mapstructure:"maxUnfinishedTasks"`
+	// MaxUnfinishedTasks int `mapstructure:"maxUnfinishedTasks"`
 }
 
 type InteractionRequestWrapper struct {
