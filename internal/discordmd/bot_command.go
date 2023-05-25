@@ -5,21 +5,49 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
-	"log"
 	"net/http"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/haojie06/midjourney-http/internal/logger"
 )
 
-func (bot *DiscordBot) switchMode(fast bool) (status int) {
-	defer func() {
-		if r := recover(); r != nil {
-			logger.Errorf("Recovered in fastRequest %s", r)
-			status = 500
-		}
-	}()
+type DiscordCommand string
+
+const (
+	DiscordCommandFast    DiscordCommand = "fast"
+	DiscordCommandRelax   DiscordCommand = "relax"
+	DiscordCommandImagine DiscordCommand = "imagine"
+	DiscordCommandUpscale DiscordCommand = "upscale"
+	DiscordCommandHelp    DiscordCommand = "describe"
+)
+
+func (bot *DiscordBot) sendRequest(payload []byte) int {
+	request, err := http.NewRequest("POST", "https://discord.com/api/v9/interactions", bytes.NewBuffer(payload))
+	if err != nil {
+		logger.Errorf("Error creating request: %s", err.Error())
+		return 500
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Authorization", bot.config.DiscordToken)
+
+	resposne, err := http.DefaultClient.Do(request)
+	if err != nil {
+		logger.Errorf("Error sending request: %s", err.Error())
+		return 500
+	}
+	defer resposne.Body.Close()
+	return resposne.StatusCode
+}
+
+// 部分指令(目前除了upscale)，在发送执行请求后，需要阻塞等待，拿到interactionId
+func (bot *DiscordBot) executeCommand(commandPayload []byte) (status int) {
+	bot.sendRequest(commandPayload)
+	time.Sleep(time.Duration((bot.randGenerator.Intn(1000))+1000) * time.Millisecond)
+	return 200
+}
+
+func (bot *DiscordBot) buildModeSwitchPayload(fast bool) (commandPayload []byte, err error) {
 	var commnad *discordgo.ApplicationCommand
 	var exists bool
 	if fast {
@@ -28,8 +56,8 @@ func (bot *DiscordBot) switchMode(fast bool) (status int) {
 		commnad, exists = bot.discordCommands["relax"]
 	}
 	if !exists || commnad == nil {
-		logger.Error("Fast/Relax command not found")
-		return 500
+		err = ErrCommandNotFound
+		return
 	}
 	payload := InteractionRequest{
 		Type:          2,
@@ -47,24 +75,15 @@ func (bot *DiscordBot) switchMode(fast bool) (status int) {
 			Attachments:        []interface{}{},
 		},
 	}
-
-	status = bot.sendRequest(payload)
+	commandPayload, err = json.Marshal(payload)
 	return
 }
 
-
-
-func (bot *DiscordBot) imagineRequest(taskId string, prompt string) (status int) {
-	defer func() {
-		if r := recover(); r != nil {
-			log.Println("Recovered in imagineRequest", r)
-			status = 500
-		}
-	}()
+func (bot *DiscordBot) buildImaginePayload(taskId string, prompt string) (commandPayload []byte, err error) {
 	imagineCommand, exists := bot.discordCommands["imagine"]
 	if !exists {
-		logger.Error("Imagine command not found")
-		return 500
+		err = ErrCommandNotFound
+		return
 	}
 	var dataOptions []*discordgo.ApplicationCommandInteractionDataOption
 	dataOptions = append(dataOptions, &discordgo.ApplicationCommandInteractionDataOption{
@@ -88,10 +107,12 @@ func (bot *DiscordBot) imagineRequest(taskId string, prompt string) (status int)
 			Attachments:        []interface{}{},
 		},
 	}
-	return bot.sendRequest(payload)
+	commandPayload, err = json.Marshal(payload)
+	return
 }
 
-func (bot *DiscordBot) upscaleRequest(id, index, messageId string) int {
+// different from slash command interaction
+func (bot *DiscordBot) buildUpscalePayload(id, index, messageId string) (commandPayload []byte, err error) {
 	payload := InteractionRequestTypeThree{
 		Type:          3,
 		MessageFlags:  0,
@@ -105,60 +126,16 @@ func (bot *DiscordBot) upscaleRequest(id, index, messageId string) int {
 			CustomID:      fmt.Sprintf("MJ::JOB::upsample::%s::%s", index, id),
 		},
 	}
-	return bot.sendRequest(payload)
+	commandPayload, err = json.Marshal(payload)
+	return
 }
 
-func (bot *DiscordBot) describeRequest(filename string, size int, file io.Reader) int {
+func (bot *DiscordBot) describeRequest(filename, uploadFilename string) (commandPayload []byte, err error) {
 	describeCommand, exists := bot.discordCommands["describe"]
 	if !exists {
-		logger.Error("Describe command not found")
-		return 500
+		err = ErrCommandNotFound
+		return
 	}
-	// get google api put url
-	apiURL := fmt.Sprintf("https://discord.com/api/v9/channels/%s/attachments", bot.config.DiscordChannelId)
-	attachmentRequest := AttachmentRequest{
-		Files: []AttachmentFile{
-			{
-				FileName: filename,
-				FileSize: size,
-				Id:       "0",
-			},
-		},
-	}
-	requestBody, _ := json.Marshal(attachmentRequest)
-	request, _ := http.NewRequest("POST", apiURL, bytes.NewBuffer(requestBody))
-	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("Authorization", bot.config.DiscordToken)
-	resp, err := http.DefaultClient.Do(request)
-	if err != nil {
-		logger.Errorf("Error sending request: %s", err.Error())
-		return 500
-	}
-	defer resp.Body.Close()
-	var attachmentResponse AttachmentResponse
-	if err := json.NewDecoder(resp.Body).Decode(&attachmentResponse); err != nil {
-		logger.Errorf("Error decoding response: %s", err.Error())
-		return 500
-	}
-	if len(attachmentResponse.Attachments) == 0 {
-		logger.Error("No attachments found")
-		return 500
-	}
-	// upload file to google storage
-	attachment := attachmentResponse.Attachments[0]
-	request, err = http.NewRequest("PUT", attachment.UploadURL, file)
-	if err != nil {
-		logger.Errorf("Error creating request: %s", err.Error())
-		return 500
-	}
-	request.Header.Set("Content-Type", "image/jpeg")
-	request.Header.Set("Authority", "discord-attachments-uploads-prd.storage.googleapis.com")
-	resp, err = http.DefaultClient.Do(request)
-	if err != nil {
-		logger.Errorf("Error sending request: %s", err.Error())
-		return 500
-	}
-	defer resp.Body.Close()
 
 	var dataOptions []*discordgo.ApplicationCommandInteractionDataOption
 	dataOptions = append(dataOptions, &discordgo.ApplicationCommandInteractionDataOption{
@@ -166,7 +143,6 @@ func (bot *DiscordBot) describeRequest(filename string, size int, file io.Reader
 		Name:  "image",
 		Value: 0,
 	})
-	// send describe command request with attachment
 	payload := InteractionRequest{
 		Type:          2,
 		ApplicationID: describeCommand.ApplicationID,
@@ -183,34 +159,47 @@ func (bot *DiscordBot) describeRequest(filename string, size int, file io.Reader
 			Attachments: []interface{}{AttachmentInCommand{
 				Id:               "0",
 				Filename:         filename,
-				UploadedFilename: attachment.UploadFilename,
+				UploadedFilename: uploadFilename,
 			}},
 		},
 	}
+	commandPayload, err = json.Marshal(payload)
 
-	return bot.sendRequest(payload)
+	return
 }
 
-func (bot *DiscordBot) sendRequest(payload interface{}) int {
-	requestBody, err := json.Marshal(payload)
+func (bot *DiscordBot) switchFastMode(fast bool) (status int) {
+	commandPayload, err := bot.buildModeSwitchPayload(fast)
 	if err != nil {
-		logger.Errorf("Error marshalling payload: %s", err.Error())
+		logger.Errorf("buildModeSwitchPayload error: %s", err)
 		return 500
 	}
+	return bot.executeCommand(commandPayload)
+}
 
-	request, err := http.NewRequest("POST", "https://discord.com/api/v9/interactions", bytes.NewBuffer(requestBody))
+func (bot *DiscordBot) imagine(taskId, prompt string) (status int) {
+	commandPayload, err := bot.buildImaginePayload(taskId, prompt)
 	if err != nil {
-		logger.Errorf("Error creating request: %s", err.Error())
+		logger.Errorf("buildImaginePayload error: %s", err)
 		return 500
 	}
-	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("Authorization", bot.config.DiscordToken)
+	return bot.executeCommand(commandPayload)
+}
 
-	resposne, err := http.DefaultClient.Do(request)
+func (bot *DiscordBot) upscale(originImageId, index, messageId string) (status int) {
+	commandPayload, err := bot.buildUpscalePayload(originImageId, index, messageId)
 	if err != nil {
-		logger.Errorf("Error sending request: %s", err.Error())
+		logger.Errorf("buildUpscalePayload error: %s", err)
 		return 500
 	}
-	defer resposne.Body.Close()
-	return resposne.StatusCode
+	return bot.executeCommand(commandPayload)
+}
+
+func (bot *DiscordBot) describe(filename, uploadFilename string) (status int) {
+	commandPayload, err := bot.describeRequest(filename, uploadFilename)
+	if err != nil {
+		logger.Errorf("describeRequest error: %s", err)
+		return 500
+	}
+	return bot.executeCommand(commandPayload)
 }

@@ -85,6 +85,8 @@ const (
 	MidjourneyTaskTypeImageDescribe   MidjourneyTaskType = "image_describe"
 )
 
+// Task 请求部分
+
 type MidjourneyTask struct {
 	TaskId   string
 	TaskType MidjourneyTaskType
@@ -92,57 +94,51 @@ type MidjourneyTask struct {
 }
 
 type ImageGenerationTaskPayload struct {
-	Prompt string
+	Prompt string `json:"prompt"`
 
-	FastMode bool
+	FastMode bool `json:"fast_mode"`
 
-	AutoUpscale bool
+	AutoUpscale bool `json:"auto_upscale"`
 }
 
 type ImageUpscaleTaskPayload struct {
-	OriginImageId        string
-	Index                string
-	OriginImageMessageId string
+	OriginImageId        string `json:"origin_image_id"`
+	Index                string `json:"index"`
+	OriginImageMessageId string `json:"origin_image_message_id"`
 }
 
 type ImageDescribeTaskPayload struct {
-	ImageFileName string
-	ImageFileSize int
+	ImageFileName string `json:"image_file_name"`
+	ImageFileSize int    `json:"image_file_size"`
 }
 
-type ImageGenerationResult struct {
-	TaskId string `json:"task_id"`
+// Task 响应部分
 
-	Successful bool `json:"successful"`
+type TaskResult struct {
+	TaskId     string `json:"task_id"`
+	Successful bool   `json:"successful"`
+	Message    string `json:"message"`
 
-	Message string `json:"message"`
+	Payload interface{} `json:"payload"`
+}
 
+type ImageGenerationResultPayload struct {
 	OriginImageURL string `json:"origin_image_url"`
 
 	ImageURLs []string `json:"image_urls"`
 }
 
-type ImageUpscaleResult struct {
-	TaskId string `json:"task_id"`
-
-	Successful bool `json:"successful"`
-
-	Message string `json:"message"`
-
+type ImageUpscaleResultPayload struct {
 	Index string `json:"index"`
 
 	ImageURL string `json:"image_url"`
 }
 
-type DescribeResult struct {
-	TaskId string `json:"task_id"`
-
-	Successful bool `json:"successful"`
-
-	Message string `json:"message"`
-
+type ImageDescribeResultPayload struct {
 	Description string `json:"description"`
 }
+
+// Attachment 部分
 
 type AttachmentRequest struct {
 	Files []AttachmentFile `json:"files"`
@@ -178,3 +174,8 @@ const (
 	TaskStateAutoUpscaling   TaskState = "auto_upscaling"
 	TaskStateManualUpscaling TaskState = "manual_upscaling"
 )
+
+type InteractionResponse struct {
+	Name          string
+	InteractionId string
+}

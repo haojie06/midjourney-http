@@ -11,7 +11,7 @@ import (
 )
 
 // imagine a image (create a task)
-func (m *MidJourneyService) Imagine(prompt, params string, fastMode, autoUpscale bool) (taskId string, imagineResultChannel chan *ImageGenerationResult, err error) {
+func (m *MidJourneyService) Imagine(prompt, params string, fastMode, autoUpscale bool) (taskId string, taskResultChan chan TaskResult, err error) {
 	// allocate taskId from prompt
 	seed := strconv.Itoa(m.randGenerator.Intn(math.MaxUint32))
 	params += " --seed " + seed
@@ -34,13 +34,13 @@ func (m *MidJourneyService) Imagine(prompt, params string, fastMode, autoUpscale
 	// 	return
 	// }
 
-	imagineResultChannel = make(chan *ImageGenerationResult)
+	taskResultChan = make(chan TaskResult, 1)
 	bot.taskRuntimes[taskId] = &TaskRuntime{
-		TaskId:                taskId,
-		ImagineResultChannel:  imagineResultChannel,
-		UpscaleResultChannels: make(map[string]chan *ImageUpscaleResult),
-		DescribeResultChannel: make(chan *DescribeResult),
+		TaskId: taskId,
+		// ImagineResultChannel:  resultNotifyChan,
+		UpscaleResultChannels: make(map[string]chan *ImageUpscaleResultPayload),
 		UpscaledImageURLs:     make([]string, 0),
+		taskResultChan:        taskResultChan,
 		AutoUpscale:           autoUpscale,
 		CreatedAt:             time.Now().Unix(),
 		UpdatedAt:             time.Now().Unix(),
@@ -61,7 +61,7 @@ func (m *MidJourneyService) Imagine(prompt, params string, fastMode, autoUpscale
 }
 
 // Upscale a image with given taskId and index
-func (m *MidJourneyService) Upscale(taskId, index string) (upscaleResultChannel chan *ImageUpscaleResult, err error) {
+func (m *MidJourneyService) Upscale(taskId, index string) (taskResultChan chan TaskResult, err error) {
 	bot, err := m.GetBot(taskId)
 	if err != nil {
 		return
@@ -75,8 +75,8 @@ func (m *MidJourneyService) Upscale(taskId, index string) (upscaleResultChannel 
 		return
 	}
 	taskRuntime.State = TaskStateManualUpscaling
-	upscaleResultChannel = make(chan *ImageUpscaleResult)
-	taskRuntime.UpscaleResultChannels[index] = upscaleResultChannel
+	taskResultChan = taskRuntime.taskResultChan
+
 	payload, _ := json.Marshal(ImageUpscaleTaskPayload{
 		OriginImageId:        taskRuntime.OriginImageId,
 		Index:                index,
@@ -90,16 +90,16 @@ func (m *MidJourneyService) Upscale(taskId, index string) (upscaleResultChannel 
 	return
 }
 
-func (m *MidJourneyService) Describe(taskId string, file *multipart.FileHeader, filename string, size int) (describeResultChannel chan *DescribeResult, err error) {
+func (m *MidJourneyService) Describe(taskId string, file *multipart.FileHeader, filename string, size int) (taskResultChan chan TaskResult, err error) {
 	bot, err := m.GetBot(taskId)
 	if err != nil {
 		return
 	}
 	bot.runtimesLock.Lock()
 	defer bot.runtimesLock.Unlock()
-	bot.FileHeaders[taskId] = file
+	bot.FileHeaders.Store(taskId, file)
 	taskRuntime := NewTaskRuntime(taskId, false)
-	describeResultChannel = taskRuntime.DescribeResultChannel
+	taskResultChan = taskRuntime.taskResultChan
 	bot.taskRuntimes[taskId] = taskRuntime
 	payload, _ := json.Marshal(ImageDescribeTaskPayload{
 		ImageFileName: filename,

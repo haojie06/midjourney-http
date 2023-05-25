@@ -7,11 +7,7 @@ type TaskRuntime struct {
 
 	InteractionId string
 
-	ImagineResultChannel chan *ImageGenerationResult
-
-	UpscaleResultChannels map[string]chan *ImageUpscaleResult
-
-	DescribeResultChannel chan *DescribeResult
+	UpscaleResultChannels map[string]chan *ImageUpscaleResultPayload
 
 	OriginImageURL string
 
@@ -30,19 +26,21 @@ type TaskRuntime struct {
 	UpdatedAt int64
 
 	State TaskState
+
+	// TODO
+
+	taskResultChan chan TaskResult
 }
 
 func NewTaskRuntime(taskId string, autoUpscale bool) *TaskRuntime {
 	return &TaskRuntime{
 		TaskId:                taskId,
-		ImagineResultChannel:  make(chan *ImageGenerationResult),
-		DescribeResultChannel: make(chan *DescribeResult),
-		UpscaleResultChannels: make(map[string]chan *ImageUpscaleResult),
+		UpscaleResultChannels: make(map[string]chan *ImageUpscaleResultPayload),
 		UpscaledImageURLs:     make([]string, 0),
+		taskResultChan:        make(chan TaskResult, 1),
 		AutoUpscale:           autoUpscale,
 		CreatedAt:             time.Now().Unix(),
 		UpdatedAt:             time.Now().Unix(),
 		State:                 TaskStateCreated,
 	}
 }
-

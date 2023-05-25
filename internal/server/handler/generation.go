@@ -35,19 +35,26 @@ func CreateGenerationTask(c *gin.Context) {
 	}
 	select {
 	case <-time.After(60 * time.Minute):
-		// TODO
-		// discordmd.MidJourneyServiceApp.RemoveTaskRuntime(taskId)
 		logger.Infof("task %s timeout", taskId)
 		c.JSON(408, gin.H{"message": "timeout"})
-	case taskResult := <-taskResultChan:
+	case result := <-taskResultChan:
 		// TODO implement webhook
-		logger.Infof("task %s completed", taskResult.TaskId)
+		if !result.Successful {
+			c.JSON(400, gin.H{"message": result.Message})
+			return
+		}
+		payload, ok := result.Payload.(discordmd.ImageGenerationResultPayload)
+		if !ok {
+			c.JSON(400, gin.H{"message": "failed to get payload"})
+			return
+		}
+		logger.Infof("task %s completed", result.TaskId)
 		c.JSON(200, model.GenerationTaskResponse{
-			TaskId:         taskResult.TaskId,
+			TaskId:         result.TaskId,
 			Status:         "completed",
 			Message:        "success",
-			OriginImageURL: taskResult.OriginImageURL,
-			ImageURLs:      taskResult.ImageURLs,
+			OriginImageURL: payload.OriginImageURL,
+			ImageURLs:      payload.ImageURLs,
 		})
 	}
 }
@@ -72,24 +79,23 @@ func GenerationImageFromGetRequest(c *gin.Context) {
 		logger.Infof("task %s timeout", taskId)
 		c.JSON(408, gin.H{"message": "timeout"})
 	case taskResult := <-taskResultChan:
-		logger.Infof("task %s completed, success: %t", taskId, taskResult.Successful)
-		if taskResult.Successful {
-			c.JSON(200, model.GenerationTaskResponse{
-				TaskId:         taskId,
-				Status:         "completed",
-				Message:        taskResult.Message,
-				ImageURLs:      taskResult.ImageURLs,
-				OriginImageURL: taskResult.OriginImageURL,
-			})
-		} else {
-			c.JSON(400, model.GenerationTaskResponse{
-				TaskId:         taskId,
-				Status:         "failed",
-				Message:        taskResult.Message,
-				ImageURLs:      taskResult.ImageURLs,
-				OriginImageURL: taskResult.OriginImageURL,
-			})
+		if !taskResult.Successful {
+			c.JSON(400, gin.H{"message": taskResult.Message})
+			return
 		}
+		payload, ok := taskResult.Payload.(discordmd.ImageGenerationResultPayload)
+		if !ok {
+			c.JSON(400, gin.H{"message": "failed to get payload"})
+			return
+		}
+		logger.Infof("task %s completed, success: %t", taskId, taskResult.Successful)
+		c.JSON(200, model.GenerationTaskResponse{
+			TaskId:         taskId,
+			Status:         "completed",
+			Message:        taskResult.Message,
+			ImageURLs:      payload.ImageURLs,
+			OriginImageURL: payload.OriginImageURL,
+		})
 	}
 
 }

@@ -16,6 +16,7 @@ var (
 	ErrFailedToCreateTask              = fmt.Errorf("failed to create task")
 	ErrFailedToDescribeImage           = fmt.Errorf("failed to describe image")
 	ErrBotNotFound                     = fmt.Errorf("bot not found")
+	ErrCommandNotFound                 = fmt.Errorf("command not found")
 	FailedEmbededMessageTitlesInCreate = map[string]struct{}{
 		"Blocked":                            {},
 		"Banned prompt":                      {},

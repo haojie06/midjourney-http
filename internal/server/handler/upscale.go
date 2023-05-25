@@ -15,22 +15,31 @@ func CreateUpscaleTask(c *gin.Context) {
 		c.JSON(400, gin.H{"error": err.Error()})
 		return
 	}
-	upscaleResultChan, err := discordmd.MidJourneyServiceApp.Upscale(req.TaskId, req.Index)
+	taskResultChan, err := discordmd.MidJourneyServiceApp.Upscale(req.TaskId, req.Index)
 	if err != nil {
 		c.JSON(400, gin.H{"message": err.Error()})
 		return
 	}
 	select {
-	case <-time.After(60 * time.Minute):
+	case <-time.After(30 * time.Minute):
 		logger.Warnf("task %s timeout", req.TaskId)
-	case taskResult := <-upscaleResultChan:
-		logger.Infof("task %s upscale %s completed", taskResult.TaskId, taskResult.Index)
+	case taskResult := <-taskResultChan:
+		if !taskResult.Successful {
+			c.JSON(400, gin.H{"message": taskResult.Message})
+			return
+		}
+		payload, ok := taskResult.Payload.(discordmd.ImageUpscaleResultPayload)
+		if !ok {
+			c.JSON(400, gin.H{"message": "payload type error"})
+			return
+		}
+		logger.Infof("task %s upscale %s completed", req.TaskId, payload.Index)
 		c.JSON(200, model.UpscaleTaskResponse{
-			TaskId:   taskResult.TaskId,
+			TaskId:   req.TaskId,
 			Status:   "completed",
 			Message:  "success",
-			ImageURL: taskResult.ImageURL,
-			Index:    taskResult.Index,
+			ImageURL: payload.ImageURL,
+			Index:    payload.Index,
 		})
 	}
 }
@@ -38,7 +47,7 @@ func CreateUpscaleTask(c *gin.Context) {
 func UpscaleImageFromGetRequest(c *gin.Context) {
 	taskId := c.Query("task_id")
 	upscaleIndex := c.Query("index")
-	upscaleResultChan, err := discordmd.MidJourneyServiceApp.Upscale(taskId, upscaleIndex)
+	resultChan, err := discordmd.MidJourneyServiceApp.Upscale(taskId, upscaleIndex)
 	if err != nil {
 		c.JSON(400, gin.H{"message": err.Error()})
 		return
@@ -48,14 +57,23 @@ func UpscaleImageFromGetRequest(c *gin.Context) {
 		// discordmd.MidJourneyServiceApp.RemoveTaskRuntime(taskId)
 		logger.Warnf("task %s timeout", taskId)
 		c.JSON(408, gin.H{"message": "timeout"})
-	case taskResult := <-upscaleResultChan:
-		logger.Infof("task %s upscale %s completed", taskResult.TaskId, taskResult.Index)
+	case taskResult := <-resultChan:
+		if !taskResult.Successful {
+			c.JSON(400, gin.H{"message": taskResult.Message})
+			return
+		}
+		payload, ok := taskResult.Payload.(discordmd.ImageUpscaleResultPayload)
+		if !ok {
+			c.JSON(400, gin.H{"message": "payload type error"})
+			return
+		}
+		logger.Infof("task %s upscale %s completed", taskId, payload.Index)
 		c.JSON(200, model.UpscaleTaskResponse{
-			TaskId:   taskResult.TaskId,
+			TaskId:   taskId,
 			Status:   "completed",
 			Message:  "success",
-			ImageURL: taskResult.ImageURL,
-			Index:    taskResult.Index,
+			ImageURL: payload.ImageURL,
+			Index:    payload.Index,
 		})
 	}
 }
