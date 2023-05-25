@@ -3,6 +3,8 @@ package discordmd
 import (
 	"fmt"
 	"math/rand"
+	"sync"
+	"time"
 
 	"github.com/haojie06/midjourney-http/internal/logger"
 )
@@ -34,14 +36,17 @@ var (
 
 func init() {
 	MidJourneyServiceApp = &MidJourneyService{
-		discordBots: make(map[string]*DiscordBot),
+		discordBots:   make(map[string]*DiscordBot),
+		taskIdToBotId: sync.Map{},
+		randGenerator: rand.New(rand.NewSource(time.Now().UnixNano())),
 	}
 }
 
 type MidJourneyService struct {
 	// request interaction -> get interaction id -> request another interaction, before an interaction is created, no more interaction can be created
-
-	discordBots map[string]*DiscordBot
+	taskIdToBotId sync.Map
+	discordBots   map[string]*DiscordBot
+	randGenerator *rand.Rand
 }
 
 func (m *MidJourneyService) Start(botConfigs []DiscordBotConfig) {
@@ -57,11 +62,20 @@ func (m *MidJourneyService) Start(botConfigs []DiscordBotConfig) {
 }
 
 // get a random bot
-func (m *MidJourneyService) GetRandomBot() *DiscordBot {
-	keys := make([]string, 0, len(m.discordBots))
-	for k := range m.discordBots {
-		keys = append(keys, k)
+func (m *MidJourneyService) GetBot(taskId string) (bot *DiscordBot, err error) {
+	botId, exist := m.taskIdToBotId.Load(taskId)
+	if !exist {
+		keys := make([]string, 0, len(m.discordBots))
+		for k := range m.discordBots {
+			keys = append(keys, k)
+		}
+		randomKey := keys[rand.Intn(len(keys))]
+		bot = m.discordBots[randomKey]
+		m.taskIdToBotId.Store(taskId, bot.BotId)
+	} else {
+		if bot, exist = m.discordBots[botId.(string)]; !exist {
+			err = ErrBotNotFound
+		}
 	}
-	randomKey := keys[rand.Intn(len(keys))]
-	return m.discordBots[randomKey]
+	return
 }

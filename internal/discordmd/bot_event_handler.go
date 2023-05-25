@@ -12,6 +12,9 @@ import (
 
 // when receive message from discord(image generated, upscaled, etc.)
 func (bot *DiscordBot) onDiscordMessageCreate(s *discordgo.Session, event *discordgo.MessageCreate) {
+	if bot.config.DiscordGuildId != "" && event.GuildID != bot.config.DiscordGuildId {
+		return
+	}
 	// warn or error message are embeded messages with title and description
 	if len(event.Embeds) > 0 {
 		for _, embed := range event.Embeds {
@@ -129,6 +132,9 @@ func (bot *DiscordBot) onDiscordMessageCreate(s *discordgo.Session, event *disco
 
 // when discord message updated (for example, when a request is intercepted by a filter)
 func (bot *DiscordBot) onDiscordMessageUpdate(s *discordgo.Session, event *discordgo.MessageUpdate) {
+	if bot.config.DiscordGuildId != "" && event.GuildID != bot.config.DiscordGuildId {
+		return
+	}
 	for _, embed := range event.Message.Embeds {
 		if _, failed := FailedEmbededMessageTitlesInUpdate[embed.Title]; failed {
 			taskId, _ := getHashFromMessage(event.Message.Content)
@@ -168,6 +174,9 @@ func (bot *DiscordBot) onDiscordMessageUpdate(s *discordgo.Session, event *disco
 // 于是在发出 request 之后，任务队列处要阻塞，等待 interaction create 事件(但是又并非所有的 interaction create 事件都是我们想要的)
 // 因此，所有的 interaction request 都需要走 taskChan 来分发，保证没有同时进行的 interaction request
 func (bot *DiscordBot) onDiscordInteractionCreate(s *discordgo.Session, event discordgo.InteractionCreate) {
+	if bot.config.DiscordGuildId != "" && event.GuildID != bot.config.DiscordGuildId {
+		return
+	}
 	// record current taskId and interactionId
 	// d, _ := json.Marshal(event)
 	// logger.Debugf("receive interaction create event: %s", string(d))

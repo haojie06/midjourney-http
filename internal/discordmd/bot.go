@@ -77,12 +77,12 @@ func (bot *DiscordBot) Start() {
 		time.Sleep(2 * time.Second) // to avoid discord 429
 		switch task.TaskType {
 		case MidjourneyTaskTypeImageGeneration:
-			logger.Infof("receive image generation task: %s", task.TaskId)
 			var taskPayload ImageGenerationTaskPayload
 			if err := json.Unmarshal(task.Payload, &taskPayload); err != nil {
 				logger.Errorf("failed to unmarshal image generation payload, err: %s", err)
 				continue
 			}
+			logger.Infof("bot: %s receive image generation task: %s prompt: %s", bot.UniqueId, task.TaskId, taskPayload.Prompt)
 			// XXX 这里同样会导致 interaction created
 			if taskPayload.FastMode {
 				if status := bot.switchMode(true); status >= 400 {
@@ -113,7 +113,7 @@ func (bot *DiscordBot) Start() {
 				}
 			}
 		case MidjourneyTaskTypeImageUpscale:
-			logger.Infof("receive image upscale task: %s", task.TaskId)
+			logger.Infof("bot: %s receive image upscale task: %s", bot.UniqueId, task.TaskId)
 			var taskPayload ImageUpscaleTaskPayload
 			if err := json.Unmarshal(task.Payload, &taskPayload); err != nil {
 				logger.Errorf("failed to unmarshal image upscale payload, err: %s", err)
@@ -124,7 +124,7 @@ func (bot *DiscordBot) Start() {
 				continue
 			}
 		case MidjourneyTaskTypeImageDescribe:
-			logger.Infof("receive image describe task: %s", task.TaskId)
+			logger.Infof("bot: %s receive image describe task: %s", bot.UniqueId, task.TaskId)
 			var taskPayload ImageDescribeTaskPayload
 			if err := json.Unmarshal(task.Payload, &taskPayload); err != nil {
 				logger.Errorf("failed to unmarshal image describe payload, err: %s", err)

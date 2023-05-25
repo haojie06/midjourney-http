@@ -52,6 +52,8 @@ func (bot *DiscordBot) switchMode(fast bool) (status int) {
 	return
 }
 
+
+
 func (bot *DiscordBot) imagineRequest(taskId string, prompt string) (status int) {
 	defer func() {
 		if r := recover(); r != nil {

@@ -9,7 +9,6 @@ import (
 )
 
 func CreateDescribeTask(c *gin.Context) {
-	botId := c.Param("botId")
 	file, err := c.FormFile("image")
 	if err != nil {
 		c.JSON(400, gin.H{"message": err.Error()})
@@ -17,7 +16,7 @@ func CreateDescribeTask(c *gin.Context) {
 	}
 
 	taskId := uuid.New().String()
-	allocatedBotId, describeResultChan, err := discordmd.MidJourneyServiceApp.Describe(botId, taskId, file, file.Filename, int(file.Size))
+	describeResultChan, err := discordmd.MidJourneyServiceApp.Describe(taskId, file, file.Filename, int(file.Size))
 	if err != nil {
 		c.JSON(400, gin.H{"message": err.Error()})
 		return
@@ -26,7 +25,6 @@ func CreateDescribeTask(c *gin.Context) {
 	case result := <-describeResultChan:
 		if result.Successful {
 			c.JSON(200, gin.H{
-				"botId":   allocatedBotId,
 				"message": result.Description,
 			})
 		} else {

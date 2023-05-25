@@ -8,29 +8,12 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/haojie06/midjourney-http/internal/logger"
 )
 
 // imagine a image (create a task)
-func (m *MidJourneyService) Imagine(botId, prompt, params string, fastMode, autoUpscale bool) (allocatedBotId string, taskId string, imagineResultChannel chan *ImageGenerationResult, err error) {
-	var bot *DiscordBot
-	var exist bool
-	if botId == "" {
-		bot = m.GetRandomBot()
-	} else if bot, exist = m.discordBots[botId]; !exist {
-		err = ErrBotNotFound
-		return
-	}
-	allocatedBotId = bot.BotId
-	bot.runtimesLock.Lock()
-	defer bot.runtimesLock.Unlock()
-	if len(bot.taskRuntimes) > bot.config.MaxUnfinishedTasks {
-		err = ErrTooManyTasks
-		return
-	}
-
-	seed := strconv.Itoa(bot.randGenerator.Intn(math.MaxUint32))
+func (m *MidJourneyService) Imagine(prompt, params string, fastMode, autoUpscale bool) (taskId string, imagineResultChannel chan *ImageGenerationResult, err error) {
+	// allocate taskId from prompt
+	seed := strconv.Itoa(m.randGenerator.Intn(math.MaxUint32))
 	params += " --seed " + seed
 	// remove extra spaces
 	prompt = strings.Join(strings.Fields(strings.Trim(strings.Trim(prompt, " ")+" "+params, " ")), " ")
@@ -38,7 +21,19 @@ func (m *MidJourneyService) Imagine(botId, prompt, params string, fastMode, auto
 	prompt = strings.ReplaceAll(prompt, "—", "--")
 	// use hash for taskId
 	taskId = getHashFromPrompt(prompt, seed)
-	logger.Infof("task %s is starting, prompt: %s", taskId, prompt)
+
+	bot, err := m.GetBot(taskId)
+	if err != nil {
+		return
+	}
+
+	bot.runtimesLock.Lock()
+	defer bot.runtimesLock.Unlock()
+	if len(bot.taskRuntimes) > bot.config.MaxUnfinishedTasks {
+		err = ErrTooManyTasks
+		return
+	}
+
 	imagineResultChannel = make(chan *ImageGenerationResult, bot.config.MaxUnfinishedTasks)
 	bot.taskRuntimes[taskId] = &TaskRuntime{
 		TaskId:                taskId,
@@ -66,17 +61,12 @@ func (m *MidJourneyService) Imagine(botId, prompt, params string, fastMode, auto
 }
 
 // Upscale a image with given taskId and index
-func (m *MidJourneyService) Upscale(botId, taskId, index string) (allocatedBotId string, upscaleResultChannel chan *ImageUpscaleResult, err error) {
-	var bot *DiscordBot
-	var exist bool
-	if botId == "" {
-		bot = m.GetRandomBot()
-	} else if bot, exist = m.discordBots[botId]; !exist {
-		err = ErrBotNotFound
+func (m *MidJourneyService) Upscale(taskId, index string) (upscaleResultChannel chan *ImageUpscaleResult, err error) {
+	bot, err := m.GetBot(taskId)
+	if err != nil {
 		return
 	}
 	// find the task runtime, and get the result channel
-	allocatedBotId = bot.BotId
 	bot.runtimesLock.Lock()
 	defer bot.runtimesLock.Unlock()
 	taskRuntime, exist := bot.taskRuntimes[taskId]
@@ -100,16 +90,11 @@ func (m *MidJourneyService) Upscale(botId, taskId, index string) (allocatedBotId
 	return
 }
 
-func (m *MidJourneyService) Describe(botId, taskId string, file *multipart.FileHeader, filename string, size int) (allocatedBotId string, describeResultChannel chan *DescribeResult, err error) {
-	var bot *DiscordBot
-	var exist bool
-	if botId == "" {
-		bot = m.GetRandomBot()
-	} else if bot, exist = m.discordBots[botId]; !exist {
-		err = ErrBotNotFound
+func (m *MidJourneyService) Describe(taskId string, file *multipart.FileHeader, filename string, size int) (describeResultChannel chan *DescribeResult, err error) {
+	bot, err := m.GetBot(taskId)
+	if err != nil {
 		return
 	}
-	allocatedBotId = bot.BotId
 	bot.runtimesLock.Lock()
 	defer bot.runtimesLock.Unlock()
 	bot.FileHeaders[taskId] = file
