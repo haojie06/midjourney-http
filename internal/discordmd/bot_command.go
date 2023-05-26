@@ -47,18 +47,29 @@ func checkCommandResponse(commandType DiscordCommand, slashCommandResponse Slash
 func (bot *DiscordBot) executeSlashCommand(commandType DiscordCommand, commandPayload []byte) (status int, interactionId string) {
 	// 通过 sync.cond 拿到执行结果
 	status = bot.sendRequest(commandPayload)
-	bot.interactionResponseMutex.Lock()
-	// 直到收到对应的响应
-	for !checkCommandResponse(commandType, bot.slashCommandResponse) {
-		bot.interactionResponseCond.Wait()
+	sigChan := make(chan struct{})
+	// 防止部分指令在发送后，没有收到响应，导致一直阻塞
+	timoutChan := time.After(3 * time.Minute)
+	go func() {
+		bot.interactionResponseMutex.Lock()
+		// 直到收到对应的响应
+		for !checkCommandResponse(commandType, bot.slashCommandResponse) {
+			bot.interactionResponseCond.Wait()
+		}
+		interactionId = bot.slashCommandResponse.InteractionId
+		// 移除命令，因为一个响应只对应一个请求
+		// bot.slashCommandResponse = SlashCommandResponse{}
+		bot.interactionResponseMutex.Unlock()
+		time.Sleep(time.Duration((bot.randGenerator.Intn(1000))+1000) * time.Millisecond)
+		sigChan <- struct{}{}
+	}()
+	select {
+	case <-sigChan:
+		return
+	case <-timoutChan:
+		status = 408
+		return
 	}
-	interactionId = bot.slashCommandResponse.InteractionId
-	// 移除命令，因为一个响应只对应一个请求
-	// bot.slashCommandResponse = SlashCommandResponse{}
-	bot.interactionResponseMutex.Unlock()
-	time.Sleep(time.Duration((bot.randGenerator.Intn(1000))+1000) * time.Millisecond)
-
-	return
 }
 
 // 类似于 button 点击这种交互，是不需要interaction Id的

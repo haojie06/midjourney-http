@@ -1,13 +1,12 @@
 package discordmd
 
-import "time"
-
+// imagine and describe will create a new TaskRuntime while upscale will reuse.
 type TaskRuntime struct {
 	TaskId string
 
 	TaskKeywordHash string
 
-	InteractionId string
+	InteractionId string // Some command responses will reference the interaction ID that created the command, so we need to keep track of it and use it to find the corresponding TaskRuntime later.
 
 	UpscaleResultChannels map[string]chan *ImageUpscaleResultPayload
 
@@ -23,10 +22,6 @@ type TaskRuntime struct {
 
 	AutoUpscale bool
 
-	CreatedAt int64
-
-	UpdatedAt int64
-
 	State TaskState
 
 	taskResultChan chan TaskResult
@@ -40,8 +35,6 @@ func NewTaskRuntime(taskId string, autoUpscale bool) *TaskRuntime {
 		UpscaledImageURLs:     make([]string, 0),
 		taskResultChan:        make(chan TaskResult, 1),
 		AutoUpscale:           autoUpscale,
-		CreatedAt:             time.Now().Unix(),
-		UpdatedAt:             time.Now().Unix(),
 		State:                 TaskStateCreated,
 	}
 }

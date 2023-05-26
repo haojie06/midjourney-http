@@ -7,7 +7,6 @@ import (
 	"mime/multipart"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 )
@@ -42,8 +41,6 @@ func (m *MidJourneyService) Imagine(prompt, params string, fastMode, autoUpscale
 		UpscaledImageURLs:     make([]string, 0),
 		taskResultChan:        taskResultChan,
 		AutoUpscale:           autoUpscale,
-		CreatedAt:             time.Now().Unix(),
-		UpdatedAt:             time.Now().Unix(),
 		State:                 TaskStateCreated,
 	}
 	// TODO 改为不需要marshal
