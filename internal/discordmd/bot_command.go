@@ -15,11 +15,11 @@ import (
 type DiscordCommand string
 
 const (
-	DiscordCommandFast    DiscordCommand = "fast"
-	DiscordCommandRelax   DiscordCommand = "relax"
-	DiscordCommandImagine DiscordCommand = "imagine"
-	DiscordCommandUpscale DiscordCommand = "upscale"
-	DiscordCommandHelp    DiscordCommand = "describe"
+	DiscordCommandFast     DiscordCommand = "fast"
+	DiscordCommandRelax    DiscordCommand = "relax"
+	DiscordCommandImagine  DiscordCommand = "imagine"
+	DiscordCommandUpscale  DiscordCommand = "upscale"
+	DiscordCommandDescribe DiscordCommand = "describe"
 )
 
 func (bot *DiscordBot) sendRequest(payload []byte) int {
@@ -39,12 +39,33 @@ func (bot *DiscordBot) sendRequest(payload []byte) int {
 	defer resposne.Body.Close()
 	return resposne.StatusCode
 }
+func checkCommandResponse(commandType DiscordCommand, slashCommandResponse SlashCommandResponse) bool {
+	return slashCommandResponse.Name == string(commandType)
+}
 
 // 部分指令(目前除了upscale)，在发送执行请求后，需要阻塞等待，拿到interactionId
-func (bot *DiscordBot) executeCommand(commandPayload []byte) (status int) {
-	bot.sendRequest(commandPayload)
+func (bot *DiscordBot) executeSlashCommand(commandType DiscordCommand, commandPayload []byte) (status int, interactionId string) {
+	// 通过 sync.cond 拿到执行结果
+	status = bot.sendRequest(commandPayload)
+	bot.interactionResponseMutex.Lock()
+	// 直到收到对应的响应
+	for !checkCommandResponse(commandType, bot.slashCommandResponse) {
+		bot.interactionResponseCond.Wait()
+	}
+	interactionId = bot.slashCommandResponse.InteractionId
+	// 移除命令，因为一个响应只对应一个请求
+	// bot.slashCommandResponse = SlashCommandResponse{}
+	bot.interactionResponseMutex.Unlock()
 	time.Sleep(time.Duration((bot.randGenerator.Intn(1000))+1000) * time.Millisecond)
-	return 200
+
+	return
+}
+
+// 类似于 button 点击这种交互，是不需要interaction Id的
+func (bot *DiscordBot) executeInteractionCommand(commandPayload []byte) (status int) {
+	status = bot.sendRequest(commandPayload)
+	time.Sleep(time.Duration((bot.randGenerator.Intn(1000))+1000) * time.Millisecond)
+	return
 }
 
 func (bot *DiscordBot) buildModeSwitchPayload(fast bool) (commandPayload []byte, err error) {
@@ -168,22 +189,26 @@ func (bot *DiscordBot) describeRequest(filename, uploadFilename string) (command
 	return
 }
 
-func (bot *DiscordBot) switchFastMode(fast bool) (status int) {
+func (bot *DiscordBot) switchFastMode(fast bool) (status int, interactionId string) {
 	commandPayload, err := bot.buildModeSwitchPayload(fast)
 	if err != nil {
 		logger.Errorf("buildModeSwitchPayload error: %s", err)
-		return 500
+		return 500, ""
 	}
-	return bot.executeCommand(commandPayload)
+	c := DiscordCommandFast
+	if !fast {
+		c = DiscordCommandRelax
+	}
+	return bot.executeSlashCommand(c, commandPayload)
 }
 
-func (bot *DiscordBot) imagine(taskId, prompt string) (status int) {
+func (bot *DiscordBot) imagine(taskId, prompt string) (status int, interactionId string) {
 	commandPayload, err := bot.buildImaginePayload(taskId, prompt)
 	if err != nil {
 		logger.Errorf("buildImaginePayload error: %s", err)
-		return 500
+		return 500, ""
 	}
-	return bot.executeCommand(commandPayload)
+	return bot.executeSlashCommand(DiscordCommandImagine, commandPayload)
 }
 
 func (bot *DiscordBot) upscale(originImageId, index, messageId string) (status int) {
@@ -192,14 +217,14 @@ func (bot *DiscordBot) upscale(originImageId, index, messageId string) (status i
 		logger.Errorf("buildUpscalePayload error: %s", err)
 		return 500
 	}
-	return bot.executeCommand(commandPayload)
+	return bot.executeInteractionCommand(commandPayload)
 }
 
-func (bot *DiscordBot) describe(filename, uploadFilename string) (status int) {
+func (bot *DiscordBot) describe(filename, uploadFilename string) (status int, interactionId string) {
 	commandPayload, err := bot.describeRequest(filename, uploadFilename)
 	if err != nil {
 		logger.Errorf("describeRequest error: %s", err)
-		return 500
+		return 500, ""
 	}
-	return bot.executeCommand(commandPayload)
+	return bot.executeSlashCommand(DiscordCommandDescribe, commandPayload)
 }

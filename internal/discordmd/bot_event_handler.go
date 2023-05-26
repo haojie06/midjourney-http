@@ -10,7 +10,7 @@ import (
 )
 
 func (bot *DiscordBot) onDiscordMessageWithEmbedsCreate(s *discordgo.Session, event *discordgo.MessageCreate) {
-	if bot.config.DiscordGuildId != "" && event.GuildID != bot.config.DiscordGuildId {
+	if bot.config.DiscordChannelId != "" && event.ChannelID != bot.config.DiscordChannelId {
 		return
 	}
 	// warn or error message are embeded messages with title and description
@@ -49,7 +49,7 @@ func (bot *DiscordBot) onDiscordMessageWithEmbedsCreate(s *discordgo.Session, ev
 // when receive message from discord(image generated, upscaled, etc.)
 // origin message or upscaled message does not have embeded message
 func (bot *DiscordBot) onDiscordMessageWithAttachmentsCreate(s *discordgo.Session, event *discordgo.MessageCreate) {
-	if bot.config.DiscordGuildId != "" && event.GuildID != bot.config.DiscordGuildId {
+	if bot.config.DiscordChannelId != "" && event.ChannelID != bot.config.DiscordChannelId {
 		return
 	}
 	// warn or error message are embeded messages with title and description
@@ -143,7 +143,7 @@ func (bot *DiscordBot) onDiscordMessageWithAttachmentsCreate(s *discordgo.Sessio
 
 // when discord message updated (for example, when a request is intercepted by a filter)
 func (bot *DiscordBot) onDiscordMessageUpdate(s *discordgo.Session, event *discordgo.MessageUpdate) {
-	if bot.config.DiscordGuildId != "" && event.GuildID != bot.config.DiscordGuildId {
+	if bot.config.DiscordChannelId != "" && event.ChannelID != bot.config.DiscordChannelId {
 		return
 	}
 	for _, embed := range event.Message.Embeds {
@@ -187,46 +187,18 @@ func (bot *DiscordBot) onDiscordMessageUpdate(s *discordgo.Session, event *disco
 
 // 在发送命令后，用其取回interaction的id
 func (bot *DiscordBot) onMessageWithInteractionCreate(s *discordgo.Session, event *discordgo.MessageCreate) {
-	if bot.config.DiscordGuildId != "" && event.GuildID != bot.config.DiscordGuildId {
+	if bot.config.DiscordChannelId != "" && event.ChannelID != bot.config.DiscordChannelId {
 		return
 	}
 	if event.Interaction == nil {
 		return
 	}
-	logger.Debugf("interaction created: %s %s", event.Interaction.ID, event.Interaction.Name)
-	bot.interactionResponseChan <- &InteractionResponse{
-		Name:          event.Interaction.Name,
+	bot.interactionResponseMutex.Lock()
+	bot.slashCommandResponse = SlashCommandResponse{
 		InteractionId: event.Interaction.ID,
+		Name:          event.Interaction.Name,
 	}
-}
+	bot.interactionResponseMutex.Unlock()
+	bot.interactionResponseCond.Broadcast()
 
-// when a discord interaction created (for example, when a user click a button or use a slash command)
-// 当前面临的最大问题是, discord 的 interaction api request 时，我们无法拿到创建的 interaction 的 id， 因此无法轻易将后续的interaction响应与http请求对应起来
-// 因此我们考虑，所有的 request 发出后，都等待 interaction create 事件，并将 interaction id 与 task id 关联起来
-// 于是在发出 request 之后，任务队列处要阻塞，等待 interaction create 事件(但是又并非所有的 interaction create 事件都是我们想要的)
-// 因此，所有的 interaction request 都需要走 taskChan 来分发，保证没有同时进行的 interaction request
-func (bot *DiscordBot) onDiscordInteractionCreate(s *discordgo.Session, event *discordgo.MessageCreate) {
-
-	// watchedEventTypes := map[string]struct{}{
-	// 	"INTERACTION_CREATE": {},
-	// 	"MESSAGE_CREATE":     {},
-	// }
-	// if _, watch := watchedEventTypes[event.Type]; watch {
-	// 	d, _ := json.Marshal(event)
-	// 	logger.Debugf("receive %s event: %s", event.Type, string(d))
-	// }
-
-	// if bot.config.DiscordGuildId != "" && event.GuildID != bot.config.DiscordGuildId {
-	// 	return
-	// }
-
-	// record current taskId and interactionId
-	// d, _ := json.Marshal(event)
-	// logger.Debugf("receive interaction create event: %s", string(d))
-	// bot.runtimesLock.Lock()
-	// defer bot.runtimesLock.Unlock()
-	// if taskRuntime, exist := bot.taskRuntimes[bot.activeTaskId]; exist {
-	// 	taskRuntime.InteractionId = event.Interaction.ID
-	// 	logger.Infof("%s create interaction: %s", bot.activeTaskId, event.Interaction.ID)
-	// }
 }

@@ -13,6 +13,7 @@ var (
 	MidJourneyServiceApp               *MidJourneyService
 	ErrTooManyTasks                    = fmt.Errorf("too many tasks")
 	ErrTaskNotFound                    = fmt.Errorf("task not found")
+	ErrTaskRuntimeNotFound             = fmt.Errorf("task runtime not found")
 	ErrFailedToCreateTask              = fmt.Errorf("failed to create task")
 	ErrFailedToDescribeImage           = fmt.Errorf("failed to describe image")
 	ErrBotNotFound                     = fmt.Errorf("bot not found")

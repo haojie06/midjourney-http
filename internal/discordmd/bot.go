@@ -21,8 +21,6 @@ type DiscordBot struct {
 
 	taskChan chan *MidjourneyTask
 
-	interactionResponseChan chan *InteractionResponse
-
 	taskRuntimes map[string]*TaskRuntime
 
 	FileHeaders sync.Map
@@ -32,6 +30,12 @@ type DiscordBot struct {
 	runtimesLock sync.RWMutex
 
 	randGenerator *rand.Rand
+
+	interactionResponseMutex *sync.RWMutex
+
+	interactionResponseCond *sync.Cond
+
+	slashCommandResponse SlashCommandResponse
 }
 
 func NewDiscordBot(config DiscordBotConfig) (*DiscordBot, error) {
@@ -44,18 +48,20 @@ func NewDiscordBot(config DiscordBotConfig) (*DiscordBot, error) {
 	if err != nil {
 		return nil, err
 	}
+	interactionResposneMutex := sync.RWMutex{}
 	bot := &DiscordBot{
-		config:                  config,
-		UniqueId:                config.UniqueId,
-		BotId:                   uuid.New().String(),
-		discordSession:          ds,
-		interactionResponseChan: make(chan *InteractionResponse),
-		taskChan:                make(chan *MidjourneyTask, 1),
-		taskRuntimes:            make(map[string]*TaskRuntime),
-		FileHeaders:             sync.Map{},
-		discordCommands:         make(map[string]*discordgo.ApplicationCommand),
-		runtimesLock:            sync.RWMutex{},
-		randGenerator:           rand.New(rand.NewSource(time.Now().UnixNano())),
+		config:                   config,
+		UniqueId:                 config.UniqueId,
+		BotId:                    uuid.New().String(),
+		discordSession:           ds,
+		taskChan:                 make(chan *MidjourneyTask, 1),
+		taskRuntimes:             make(map[string]*TaskRuntime),
+		FileHeaders:              sync.Map{},
+		discordCommands:          make(map[string]*discordgo.ApplicationCommand),
+		runtimesLock:             sync.RWMutex{},
+		randGenerator:            rand.New(rand.NewSource(time.Now().UnixNano())),
+		interactionResponseMutex: &interactionResposneMutex,
+		interactionResponseCond:  sync.NewCond(&interactionResposneMutex),
 	}
 	for _, command := range commands {
 		bot.discordCommands[command.Name] = command
@@ -64,7 +70,6 @@ func NewDiscordBot(config DiscordBotConfig) (*DiscordBot, error) {
 	bot.discordSession.AddHandler(bot.onDiscordMessageWithAttachmentsCreate)
 
 	bot.discordSession.AddHandler(bot.onDiscordMessageUpdate)
-	bot.discordSession.AddHandler(bot.onDiscordInteractionCreate)
 	bot.discordSession.AddHandler(bot.onMessageWithInteractionCreate)
 	bot.discordSession.Identify.Intents = discordgo.IntentsAll
 	if err := bot.discordSession.Open(); err != nil {

@@ -37,15 +37,15 @@ func InnitRouter(apiKey string) *gin.Engine {
 	router.Use(ginzap.RecoveryWithZap(logger.ZapLogger, true))
 	router.Use(ginzap.Ginzap(logger.ZapLogger, time.RFC3339Nano, true))
 	router.Use(cors.Default())
-	router.Use(PermissionCheckMiddleware(apiKey))
 	pprof.Register(router)
 
-	router.POST("/image-task", handler.CreateGenerationTask)
-	router.GET("/image", handler.GenerationImageFromGetRequest)
+	apiGroup := router.Group("", PermissionCheckMiddleware(apiKey))
+	apiGroup.POST("/image-task", handler.CreateGenerationTask)
+	apiGroup.GET("/image", handler.GenerationImageFromGetRequest)
 
-	router.POST("/upscale-task", handler.CreateUpscaleTask)
-	router.GET("/upscale", handler.UpscaleImageFromGetRequest)
+	apiGroup.POST("/upscale-task", handler.CreateUpscaleTask)
+	apiGroup.GET("/upscale", handler.UpscaleImageFromGetRequest)
 
-	router.POST("/describe-task", handler.CreateDescribeTask)
+	apiGroup.POST("/describe-task", handler.CreateDescribeTask)
 	return router
 }
