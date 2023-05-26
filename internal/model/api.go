@@ -1,5 +1,6 @@
 package model
 
+// 请求部分
 type WebhookConfig struct {
 	URL string `json:"url"`
 }
@@ -24,26 +25,29 @@ type UpscaleTaskRequest struct {
 	Index string `json:"index"`
 }
 
-type GenerationTaskResponse struct {
+// 响应部分
+type TaskHTTPResponse struct {
 	TaskId string `json:"task_id"`
 
-	Status string `json:"status"` // pending, running, completed, failed
+	Status string `json:"status"` // pending, created, completed, failed
 
 	Message string `json:"message"`
 
+	Payload interface{} `json:"payload"`
+}
+
+type GenerationTaskResponsePayload struct {
 	ImageURLs []string `json:"image_urls"`
 
 	OriginImageURL string `json:"origin_image_url"`
 }
 
-type UpscaleTaskResponse struct {
-	TaskId string `json:"task_id"`
-
-	Status string `json:"status"`
-
-	Message string `json:"message"`
-
+type UpscaleTaskResponsePayload struct {
 	ImageURL string `json:"image_url"`
 
 	Index string `json:"index"`
+}
+
+type DescribeTaskResponsePayload struct {
+	Description string `json:"description"`
 }

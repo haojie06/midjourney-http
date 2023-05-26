@@ -13,6 +13,7 @@ var (
 	MidJourneyServiceApp               *MidJourneyService
 	ErrTooManyTasks                    = fmt.Errorf("too many tasks")
 	ErrTaskNotFound                    = fmt.Errorf("task not found")
+	ErrTaskRuntimeNotFound             = fmt.Errorf("task runtime not found")
 	ErrFailedToCreateTask              = fmt.Errorf("failed to create task")
 	ErrFailedToDescribeImage           = fmt.Errorf("failed to describe image")
 	ErrBotNotFound                     = fmt.Errorf("bot not found")
@@ -39,6 +40,7 @@ func init() {
 	MidJourneyServiceApp = &MidJourneyService{
 		discordBots:   make(map[string]*DiscordBot),
 		taskIdToBotId: sync.Map{},
+		botMapMutex:   sync.Mutex{},
 		randGenerator: rand.New(rand.NewSource(time.Now().UnixNano())),
 	}
 }
@@ -47,6 +49,7 @@ type MidJourneyService struct {
 	// request interaction -> get interaction id -> request another interaction, before an interaction is created, no more interaction can be created
 	taskIdToBotId sync.Map
 	discordBots   map[string]*DiscordBot
+	botMapMutex   sync.Mutex
 	randGenerator *rand.Rand
 }
 
@@ -64,6 +67,9 @@ func (m *MidJourneyService) Start(botConfigs []DiscordBotConfig) {
 
 // get a random bot
 func (m *MidJourneyService) GetBot(taskId string) (bot *DiscordBot, err error) {
+	m.botMapMutex.Lock()
+	defer m.botMapMutex.Unlock()
+
 	botId, exist := m.taskIdToBotId.Load(taskId)
 	if !exist {
 		keys := make([]string, 0, len(m.discordBots))

@@ -4,39 +4,44 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"github.com/haojie06/midjourney-http/internal/discordmd"
+	"github.com/haojie06/midjourney-http/internal/model"
+	"github.com/haojie06/midjourney-http/internal/utils"
 )
 
 func CreateDescribeTask(c *gin.Context) {
 	file, err := c.FormFile("image")
 	if err != nil {
-		c.JSON(400, gin.H{"message": err.Error()})
+		utils.GinFailedWithMessage(c, 400, err.Error())
 		return
 	}
 
-	taskId := uuid.New().String()
-	resultChan, err := discordmd.MidJourneyServiceApp.Describe(taskId, file, file.Filename, int(file.Size))
+	taskId, resultChan, err := discordmd.MidJourneyServiceApp.Describe(file, file.Filename, int(file.Size))
 	if err != nil {
-		c.JSON(400, gin.H{"message": err.Error()})
+		utils.GinFailedWithMessageAndTaskId(c, 400, taskId, err.Error())
 		return
 	}
 	select {
 	case result := <-resultChan:
 		if !result.Successful {
-			c.JSON(400, gin.H{"message": result.Message})
+			utils.GinFailedWithMessageAndTaskId(c, 400, taskId, result.Message)
 			return
 		}
 		payload, ok := result.Payload.(discordmd.ImageDescribeResultPayload)
 		if !ok {
-			c.JSON(400, gin.H{"message": "failed to get payload"})
+			utils.GinFailedWithMessageAndTaskId(c, 400, taskId, "failed to get payload")
 			return
 		}
-		c.JSON(200, gin.H{
-			"message": payload.Description,
+		c.JSON(200, model.TaskHTTPResponse{
+			TaskId: taskId,
+			Status: "completed",
+			Payload: model.DescribeTaskResponsePayload{
+				Description: payload.Description,
+			},
 		})
-
+		return
 	case <-time.After(5 * time.Minute):
-		c.JSON(408, gin.H{"message": "timeout"})
+		utils.GinFailedWithMessageAndTaskId(c, 408, taskId, "timeout")
+		return
 	}
 }

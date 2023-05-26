@@ -175,7 +175,7 @@ const (
 	TaskStateManualUpscaling TaskState = "manual_upscaling"
 )
 
-type InteractionResponse struct {
+type SlashCommandResponse struct {
 	Name          string
 	InteractionId string
 }

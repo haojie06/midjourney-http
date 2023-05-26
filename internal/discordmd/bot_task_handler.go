@@ -16,23 +16,32 @@ func (bot *DiscordBot) ImagineTaskHandler(taskId string, payload json.RawMessage
 	if err = json.Unmarshal(payload, &taskPayload); err != nil {
 		return
 	}
+	bot.runtimesLock.Lock()
+	defer bot.runtimesLock.Unlock()
+	taskRuntime, exist := bot.taskRuntimes[taskId]
+	if !exist {
+		err = ErrTaskRuntimeNotFound
+		return
+	}
+
 	logger.Infof("imagine task %s received, fast mode: %t, prompt: %s", taskId, taskPayload.FastMode, taskPayload.Prompt)
 	if taskPayload.FastMode {
 		bot.switchFastMode(true)
 		defer bot.switchFastMode(false)
 	}
-	if statusCode := bot.imagine(taskId, taskPayload.Prompt); statusCode >= 400 {
+	statusCode, interactionId := bot.imagine(taskId, taskPayload.Prompt)
+	taskRuntime.InteractionId = interactionId
+
+	if statusCode >= 400 {
 		logger.Warnf("task %s failed, status code: %d", taskId, statusCode)
-		bot.runtimesLock.Lock()
-		defer bot.runtimesLock.Unlock()
-		if taskRuntime, exist := bot.taskRuntimes[taskId]; exist {
-			taskRuntime.taskResultChan <- TaskResult{
-				TaskId:     taskId,
-				Successful: false,
-				Message:    fmt.Sprintf("imagine task: %s failed, code: %d", taskId, statusCode),
-			}
+		taskRuntime.taskResultChan <- TaskResult{
+			TaskId:     taskId,
+			Successful: false,
+			Message:    fmt.Sprintf("imagine task: %s failed, code: %d", taskId, statusCode),
 		}
+		return
 	}
+	logger.Debugf("imagine task %s interaction created id: %s", taskId, interactionId)
 	return
 }
 
@@ -61,6 +70,13 @@ func (bot *DiscordBot) DescribeTaskHandler(taskId string, payload json.RawMessag
 	if err = json.Unmarshal(payload, &taskPayload); err != nil {
 		return
 	}
+	bot.runtimesLock.Lock()
+	defer bot.runtimesLock.Unlock()
+	taskRuntime, exist := bot.taskRuntimes[taskId]
+	if !exist {
+		err = ErrTaskRuntimeNotFound
+		return
+	}
 	fileHeaderI, exist := bot.FileHeaders.LoadAndDelete(taskId)
 	if !exist {
 		err = errors.New("failed to get image file header")
@@ -80,14 +96,16 @@ func (bot *DiscordBot) DescribeTaskHandler(taskId string, payload json.RawMessag
 	if err != nil {
 		return
 	}
-	if code := bot.describe(taskPayload.ImageFileName, uploadFilename); code >= 400 {
-		if taskRuntime, exist := bot.taskRuntimes[taskId]; exist {
-			taskRuntime.taskResultChan <- TaskResult{
-				TaskId:     taskId,
-				Successful: false,
-				Message:    fmt.Sprintf("imagine task: %s failed, code: %d", taskId, code),
-			}
+	code, interactionid := bot.describe(taskPayload.ImageFileName, uploadFilename)
+	taskRuntime.InteractionId = interactionid
+	if code >= 400 {
+		taskRuntime.taskResultChan <- TaskResult{
+			TaskId:     taskId,
+			Successful: false,
+			Message:    fmt.Sprintf("imagine task: %s failed, code: %d", taskId, code),
 		}
+		return
 	}
+	logger.Debugf("describe task %s interaction created id: %s", taskId, interactionid)
 	return
 }
