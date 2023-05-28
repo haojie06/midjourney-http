@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/bwmarrin/discordgo"
-	"github.com/haojie06/midjourney-http/internal/logger"
 )
 
 type DiscordCommand string
@@ -22,31 +21,32 @@ const (
 	DiscordCommandDescribe DiscordCommand = "describe"
 )
 
-func (bot *DiscordBot) sendRequest(payload []byte) int {
+func (bot *DiscordBot) sendInteractionRequest(payload []byte) (status int, err error) {
 	request, err := http.NewRequest("POST", "https://discord.com/api/v9/interactions", bytes.NewBuffer(payload))
 	if err != nil {
-		logger.Errorf("Error creating request: %s", err.Error())
-		return 500
+		return 500, err
 	}
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Authorization", bot.config.DiscordToken)
 
 	resposne, err := http.DefaultClient.Do(request)
 	if err != nil {
-		logger.Errorf("Error sending request: %s", err.Error())
-		return 500
+		return 500, err
 	}
 	defer resposne.Body.Close()
-	return resposne.StatusCode
+	return resposne.StatusCode, nil
 }
 func checkCommandResponse(commandType DiscordCommand, slashCommandResponse SlashCommandResponse) bool {
 	return slashCommandResponse.Name == string(commandType)
 }
 
 // 部分指令(目前除了upscale)，在发送执行请求后，需要阻塞等待，拿到interactionId
-func (bot *DiscordBot) executeSlashCommand(commandType DiscordCommand, commandPayload []byte) (status int, interactionId string) {
+func (bot *DiscordBot) executeSlashCommand(commandType DiscordCommand, commandPayload []byte) (interactionId string, status int, err error) {
 	// 通过 sync.cond 拿到执行结果
-	status = bot.sendRequest(commandPayload)
+	status, err = bot.sendInteractionRequest(commandPayload)
+	if err != nil {
+		return "", status, err
+	}
 	sigChan := make(chan struct{})
 	// 防止部分指令在发送后，没有收到响应，导致一直阻塞
 	timoutChan := time.After(3 * time.Minute)
@@ -72,9 +72,9 @@ func (bot *DiscordBot) executeSlashCommand(commandType DiscordCommand, commandPa
 	}
 }
 
-// 类似于 button 点击这种交互，是不需要interaction Id的
-func (bot *DiscordBot) executeInteractionCommand(commandPayload []byte) (status int) {
-	status = bot.sendRequest(commandPayload)
+// MessageComponent交互 包括 upscale variant等，不需要等待响应拿到id
+func (bot *DiscordBot) executeMessageComponent(commandPayload []byte) (status int, err error) {
+	status, err = bot.sendInteractionRequest(commandPayload)
 	time.Sleep(time.Duration((bot.randGenerator.Intn(1000))+1000) * time.Millisecond)
 	return
 }
@@ -200,42 +200,44 @@ func (bot *DiscordBot) describeRequest(filename, uploadFilename string) (command
 	return
 }
 
-func (bot *DiscordBot) switchFastMode(fast bool) (status int, interactionId string) {
+// 调用 discord /v9/interaction 接口, 执行 slash command 或者是 message component 点击等交互
+func (bot *DiscordBot) switchFastMode(fast bool) (interactionId string, status int, err error) {
 	commandPayload, err := bot.buildModeSwitchPayload(fast)
 	if err != nil {
-		logger.Errorf("buildModeSwitchPayload error: %s", err)
-		return 500, ""
+		return "", 500, err
 	}
 	c := DiscordCommandFast
 	if !fast {
 		c = DiscordCommandRelax
 	}
-	return bot.executeSlashCommand(c, commandPayload)
+	interactionId, status, err = bot.executeSlashCommand(c, commandPayload)
+	return
 }
 
-func (bot *DiscordBot) imagine(taskId, prompt string) (status int, interactionId string) {
+func (bot *DiscordBot) imagine(taskId, prompt string) (interactionId string, status int, err error) {
 	commandPayload, err := bot.buildImaginePayload(taskId, prompt)
 	if err != nil {
-		logger.Errorf("buildImaginePayload error: %s", err)
-		return 500, ""
+		return "", 500, err
 	}
-	return bot.executeSlashCommand(DiscordCommandImagine, commandPayload)
+	interactionId, status, err = bot.executeSlashCommand(DiscordCommandImagine, commandPayload)
+	return
 }
 
-func (bot *DiscordBot) upscale(originImageId, index, messageId string) (status int) {
-	commandPayload, err := bot.buildUpscalePayload(originImageId, index, messageId)
-	if err != nil {
-		logger.Errorf("buildUpscalePayload error: %s", err)
-		return 500
-	}
-	return bot.executeInteractionCommand(commandPayload)
-}
-
-func (bot *DiscordBot) describe(filename, uploadFilename string) (status int, interactionId string) {
+func (bot *DiscordBot) describe(filename, uploadFilename string) (interactionId string, status int, err error) {
 	commandPayload, err := bot.describeRequest(filename, uploadFilename)
 	if err != nil {
-		logger.Errorf("describeRequest error: %s", err)
-		return 500, ""
+		return "", 500, err
 	}
-	return bot.executeSlashCommand(DiscordCommandDescribe, commandPayload)
+	interactionId, status, err = bot.executeSlashCommand(DiscordCommandDescribe, commandPayload)
+	return
+}
+
+// upscale 的交互为 MessageComponent 和 SlashCommand 不同
+func (bot *DiscordBot) upscale(originImageId, index, messageId string) (status int, err error) {
+	commandPayload, err := bot.buildUpscalePayload(originImageId, index, messageId)
+	if err != nil {
+		return 500, err
+	}
+	status, err = bot.executeMessageComponent(commandPayload)
+	return
 }

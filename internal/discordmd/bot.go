@@ -36,6 +36,8 @@ type DiscordBot struct {
 	interactionResponseCond *sync.Cond
 
 	slashCommandResponse SlashCommandResponse
+
+	logger *logger.CustomLogger
 }
 
 func NewDiscordBot(config DiscordBotConfig) (*DiscordBot, error) {
@@ -62,6 +64,7 @@ func NewDiscordBot(config DiscordBotConfig) (*DiscordBot, error) {
 		randGenerator:            rand.New(rand.NewSource(time.Now().UnixNano())),
 		interactionResponseMutex: &interactionResposneMutex,
 		interactionResponseCond:  sync.NewCond(&interactionResposneMutex),
+		logger:                   logger.NewCustomLogger().With("uniqueId", config.UniqueId),
 	}
 	for _, command := range commands {
 		bot.discordCommands[command.Name] = command
@@ -79,32 +82,20 @@ func NewDiscordBot(config DiscordBotConfig) (*DiscordBot, error) {
 }
 
 // task worker loop
+// 接收任务，并向discord发送请求
 func (bot *DiscordBot) Start() {
-	// reveive task and send interaction request
 	for {
 		task := <-bot.taskChan
+		bot.logger.Infof("receive %s task: %s", task.TaskType, task.TaskId)
 		switch task.TaskType {
-		// TODO 增加通用错误响应结构体
 		case MidjourneyTaskTypeImageGeneration:
-			logger.Infof("bot: %s receive image generation task: %s", bot.UniqueId, task.TaskId)
-			if err := bot.ImagineTaskHandler(task.TaskId, task.Payload); err != nil {
-				logger.Errorf("failed to handle imagine task, err: %s", err)
-				continue
-			}
+			bot.ImagineTaskHandler(task.TaskId, task.Payload)
 		case MidjourneyTaskTypeImageUpscale:
-			logger.Infof("bot: %s receive image upscale task: %s", bot.UniqueId, task.TaskId)
-			if err := bot.UpscaleTaskHandler(task.TaskId, task.Payload); err != nil {
-				logger.Errorf("failed to handle upscale task, err: %s", err)
-				continue
-			}
+			bot.UpscaleTaskHandler(task.TaskId, task.Payload)
 		case MidjourneyTaskTypeImageDescribe:
-			logger.Infof("bot: %s receive image describe task: %s", bot.UniqueId, task.TaskId)
-			if err := bot.DescribeTaskHandler(task.TaskId, task.Payload); err != nil {
-				logger.Errorf("failed to handle describe task, err: %s", err)
-				continue
-			}
+			bot.DescribeTaskHandler(task.TaskId, task.Payload)
 		default:
-			logger.Warnf("unknown task type: %s", task.TaskType)
+			bot.logger.Warnf("found unknown task type: %s", task.TaskType)
 		}
 	}
 }

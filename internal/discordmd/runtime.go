@@ -38,3 +38,12 @@ func NewTaskRuntime(taskId string, autoUpscale bool) *TaskRuntime {
 		State:                 TaskStateCreated,
 	}
 }
+
+func (r *TaskRuntime) Response(successful bool, message string, payload interface{}) {
+	r.taskResultChan <- TaskResult{
+		TaskId:     r.TaskId,
+		Successful: successful,
+		Message:    message,
+		Payload:    payload,
+	}
+}
