@@ -19,6 +19,7 @@ var (
 	ErrBotNotFound                     = fmt.Errorf("bot not found")
 	ErrCommandNotFound                 = fmt.Errorf("command not found")
 	FailedEmbededMessageTitlesInCreate = map[string]struct{}{
+		"Pending mod message":                {},
 		"Blocked":                            {},
 		"Banned prompt":                      {},
 		"Invalid parameter":                  {},

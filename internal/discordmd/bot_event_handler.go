@@ -27,11 +27,15 @@ func (bot *DiscordBot) onDiscordMessageWithEmbedsCreate(s *discordgo.Session, ev
 			// continue
 			return
 		}
+		if event.Interaction == nil {
+			bot.logger.Warnf("interaction is nil, embed: %+v", embed)
+		}
 		// warn or error message will contain origin prompt in footer, so we can get taskId from it
-		taskKeywordHash := getHashFromEmbeds(embed.Footer.Text)
-		taskRuntime := bot.getTaskRuntimeByTaskKeywordHash(taskKeywordHash)
+		// taskKeywordHash := getHashFromEmbeds(embed.Footer.Text)
+		// taskRuntime := bot.getTaskRuntimeByTaskKeywordHash(taskKeywordHash)
+		taskRuntime := bot.getTaskRuntimeByInteractionId(event.Interaction.ID)
 		if taskRuntime == nil {
-			bot.logger.Warnf("task with keywordHash %s is not created by this bot, prompt: %s", taskKeywordHash, embed.Footer.Text)
+			bot.logger.Warnf("interaction %s is not created by this bot, prompt: %s", event.Interaction.ID, embed.Footer.Text)
 			return
 		}
 		bot.logger.Warnf("task %s failed, reason: %s descripiton: %s", taskRuntime.TaskId, embed.Title, embed.Description)
